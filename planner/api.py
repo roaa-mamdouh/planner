@@ -5,9 +5,11 @@ from .realtime import emit_task_update, emit_batch_update
 
 @frappe.whitelist()
 def get_planner_tasks(department=None):
-    """Get all tasks for the planner view with enhanced filtering"""
+    """Get all tasks for the planner view grouped by employees"""
     filters = {
         "status": ["in", ["Open", "Working", "Completed", "Overdue"]],
+        "exp_start_date": ["is", "set"],
+        "exp_end_date": ["is", "set"]
     }
     
     if department:
@@ -19,19 +21,68 @@ def get_planner_tasks(department=None):
         fields=[
             "name", "subject", "status", "priority", "project",
             "exp_start_date", "exp_end_date", "expected_time",
-            "assigned_to", "department", "description", "color",
+            "department", "description", "color",
             "_assign", "_comments", "_seen"
         ],
         order_by="exp_start_date asc"
     )
     
-    # Enhance task data with additional information
+    # Group tasks by employee
+    employees_dict = {}
+    
     for task in tasks:
         task.color = get_task_color(task)
         task.assignees = get_task_assignees(task)
         task.comments = get_task_comments(task)
         
-    return tasks
+        # Get assigned users
+        assigned_users = []
+        if task._assign:
+            assigned_users = frappe.parse_json(task._assign)
+        
+        # If no assignment, add to unassigned
+        if not assigned_users:
+            assigned_users = ["Unassigned"]
+        
+        # Add task to each assigned user
+        for user in assigned_users:
+            if user not in employees_dict:
+                # Get user details
+                if user != "Unassigned":
+                    user_info = frappe.get_cached_value(
+                        "User", user, ["full_name", "user_image"], as_dict=True
+                    )
+                    employee_name = user_info.get("full_name", user) if user_info else user
+                else:
+                    employee_name = "Unassigned"
+                    
+                employees_dict[user] = {
+                    "id": user,
+                    "name": employee_name,
+                    "tasks": []
+                }
+            
+            # Format task for timeline
+            formatted_task = {
+                "id": task.name,
+                "name": task.name,
+                "title": f"{task.project} - {task.subject}" if task.project else task.subject,
+                "startDate": task.exp_start_date,
+                "endDate": task.exp_end_date,
+                "status": task.status,
+                "priority": task.priority,
+                "project": task.project,
+                "expected_time": task.expected_time,
+                "color": task.color,
+                "subject": task.subject
+            }
+            
+            employees_dict[user]["tasks"].append(formatted_task)
+    
+    # Convert to list format expected by frontend
+    employees_list = list(employees_dict.values())
+    
+    return employees_list
 
 @frappe.whitelist()
 def planner_get_backlog(searchtext=None, projectText=None):
@@ -57,13 +108,14 @@ def planner_get_backlog(searchtext=None, projectText=None):
         fields=[
             "name", "subject", "status", "priority", "project",
             "exp_start_date", "exp_end_date", "expected_time",
-            "assigned_to", "department", "color"
+            "department", "color", "_assign"
         ],
         order_by="creation desc"
     )
     
     for task in tasks:
         task.color = get_task_color(task)
+        task.assigned_to = get_primary_assignee(task)
     
     return tasks
 
@@ -77,7 +129,7 @@ def update_task(task_id, updates):
     
     # Validate updates
     valid_fields = [
-        "status", "priority", "assigned_to", "exp_start_date",
+        "status", "priority", "exp_start_date",
         "exp_end_date", "expected_time", "description"
     ]
     
@@ -163,6 +215,15 @@ def get_task_assignees(task):
                     "image": user_info.user_image
                 })
     return assignees
+
+def get_primary_assignee(task):
+    """Get the primary assignee from _assign field"""
+    if task._assign:
+        assigned_users = frappe.parse_json(task._assign)
+        if assigned_users and len(assigned_users) > 0:
+            # Return the first assigned user as primary assignee
+            return assigned_users[0]
+    return "Unassigned"
 
 def get_task_comments(task):
     """Get formatted task comments"""

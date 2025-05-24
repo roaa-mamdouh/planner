@@ -65,7 +65,8 @@ export function useTaskManager(department) {
       ...task,
       exp_start_date: new Date(task.exp_start_date),
       exp_end_date: new Date(task.exp_end_date),
-      color: getTaskColor(task.status)
+      color: getTaskColor(task.status),
+      assigned_to: task.assigned_to || 'Unassigned'
     }))
   }
 
