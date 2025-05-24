@@ -1,0 +1,132 @@
+/* Dark mode CSS variables and custom styles */
+:root {
+  --bg-primary: #F3F3F3;
+  --bg-secondary: #ffffff;
+  --text-primary: #000000;
+  --text-secondary: #6b7280;
+  --border-color: #ededed;
+  --timeline-bg: #ffffff;
+  --timeline-border: #ededed;
+  --timeline-current-time: #171717;
+  --timeline-selected: #E03636;
+  --timeline-selected-bg: #B7B7B7;
+  --task-default-bg: #EEEEEE;
+  --task-completed-bg: #008127;
+  --datepicker-active: #171717;
+}
+
+.dark {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --text-primary: #e5e5e5;
+  --text-secondary: #a3a3a3;
+  --border-color: #404040;
+  --timeline-bg: #2d2d2d;
+  --timeline-border: #404040;
+  --timeline-current-time: #e5e5e5;
+  --timeline-selected: #E03636;
+  --timeline-selected-bg: #525252;
+  --task-default-bg: #404040;
+  --task-completed-bg: #16a34a;
+  --datepicker-active: #e5e5e5;
+}
+
+/* Dark mode timeline styles */
+.dark .vis-timeline {
+  background-color: var(--timeline-bg) !important;
+  border-color: var(--timeline-border) !important;
+  color: var(--text-primary) !important;
+}
+
+.dark .vis-labelset .vis-label,
+.dark .vis-foreground .vis-group {
+  border-bottom-color: var(--timeline-border) !important;
+  background-color: var(--timeline-bg) !important;
+  color: var(--text-primary) !important;
+}
+
+.dark .vis-panel.vis-background {
+  background-color: var(--timeline-bg) !important;
+}
+
+.dark .vis-panel.vis-top {
+  background-color: var(--timeline-bg) !important;
+  border-bottom-color: var(--timeline-border) !important;
+}
+
+.dark .vis-time-axis .vis-text {
+  color: var(--text-primary) !important;
+}
+
+.dark .vis-time-axis .vis-grid.vis-minor {
+  border-color: var(--timeline-border) !important;
+}
+
+.dark .vis-time-axis .vis-grid.vis-major {
+  border-color: var(--border-color) !important;
+}
+
+.dark .vis-current-time {
+  background-color: var(--timeline-current-time) !important;
+}
+
+.dark .vis-item.vis-selected {
+  border-color: var(--timeline-selected) !important;
+  background-color: var(--timeline-selected-bg) !important;
+}
+
+.dark .vis-item[task-type="1"] {
+  background-color: var(--task-default-bg) !important;
+  color: var(--text-primary) !important;
+}
+
+.dark .vis-item[task-type="0"] {
+  background-color: var(--task-completed-bg) !important;
+  color: #ffffff !important;
+}
+
+/* Dark mode datepicker styles */
+.dark .dp__calendar {
+  background-color: var(--bg-secondary) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+.dark .dp__range_end, 
+.dark .dp__range_start, 
+.dark .dp__active_date, 
+.dark .dp__overlay_cell_active {
+  background: var(--datepicker-active) !important;
+  color: var(--bg-primary) !important;
+}
+
+.dark .dp__today {
+  border-color: var(--datepicker-active) !important;
+}
+
+.dark .dp__cell_inner {
+  color: var(--text-primary) !important;
+}
+
+.dark .dp__month_year_select {
+  color: var(--text-primary) !important;
+}
+
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}

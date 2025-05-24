@@ -2,6 +2,7 @@ import './index.css'
 import { createApp } from 'vue'
 import router from "./router";
 import App from './App.vue'
+import { useDarkMode } from './composables/useDarkMode'
 
 import { setConfig, frappeRequest, resourcesPlugin, 
     Button, 
@@ -18,6 +19,10 @@ import { setConfig, frappeRequest, resourcesPlugin,
 } from 'frappe-ui'
 import VueDatePicker from '@vuepic/vue-datepicker';
 import '@vuepic/vue-datepicker/dist/main.css';
+
+// Initialize dark mode
+const { initializeDarkMode } = useDarkMode()
+initializeDarkMode()
 
 const app = createApp(App);
 setConfig('resourceFetcher', frappeRequest)

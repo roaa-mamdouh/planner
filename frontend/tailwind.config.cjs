@@ -1,6 +1,7 @@
 // const
 module.exports = {
   presets: [require('frappe-ui/src/utils/tailwind.config')],
+  darkMode: 'class',
   content: [
     './index.html',
     './src/**/*.{vue,js,ts,jsx,tsx}',
@@ -27,6 +28,15 @@ module.exports = {
           raw: '(display-mode: standalone)',
         },
       },
+      colors: {
+        dark: {
+          bg: '#1a1a1a',
+          surface: '#2d2d2d',
+          border: '#404040',
+          text: '#e5e5e5',
+          'text-secondary': '#a3a3a3',
+        }
+      }
     },
   }
 }
