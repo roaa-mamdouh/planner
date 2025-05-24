@@ -1,212 +1,178 @@
-# Copyright (c) 2024, ONFUSE AG
-# See license.txt
-
 import frappe
-from frappe.utils import getdate, add_to_date
+from frappe import _
+from frappe.utils import now_datetime, get_datetime
+from .realtime import emit_task_update, emit_batch_update
 
 @frappe.whitelist()
-def get_planner_tasks(department):
-
-
-    # Employees and tasks assigned to the
-    users = []
-    
-    employees = frappe.db.get_all(
-        "Employee", 
-        filters={
-            'department': department, 
-            'status' : 'Active'
-        },
-        order_by="employee_name asc",
-        fields=['name', 'employee_name', 'user_id', 'image']
-    )
-
-    for employee in employees: 
-        user = {}
-        user['name'] = employee.name
-        user['user_id'] = employee.user_id
-        user['image'] = employee.image
-        user['employee_name'] = employee.employee_name
-
-        # Final variabable all the tasks go into
-        user_tasks = [] 
-
-        if (employee.user_id):
-            # Get all the tasks with a timeline assigned to them 60 days ago and 60 days into the future
-            tasks = frappe.db.get_all(
-                "Task", 
-                filters={
-                    "_assign": ["like", f'%{employee.user_id}%'], 
-                    "exp_start_date": ["is", "set"], # Make sure the start and end dates are set, else we cannot show this in timeline
-                    "exp_end_date": ["is", "set"]
-                }, 
-                fields=['name', 'project', 'subject', 'exp_start_date', 'exp_end_date', 'expected_time', 'actual_time', 'color']
-            )
-
-            for task in tasks:
-                user_task = {}
-                tasktitle = ""
-
-                # If there is a project attached, we should get the project name
-                if task.project: 
-                    user_task["project_name"] = frappe.db.get_value("Project", task.project, "project_name")
-                    tasktitle = f'{task.project} - {task.subject}'
-                else: 
-                    tasktitle = task.subject
-
-                user_task['name'] = task.name
-                user_task['title'] = tasktitle
-                user_task['startDate'] = task.exp_start_date
-                user_task['endDate'] = get_one_day_later(task.exp_end_date)
-                user_task['color'] = task.color
-                user_task['type'] = 1 # This should be a work task
-
-                user_tasks.append(user_task)
-
-            
-            # Get the employee holidays
-            holidaydata = frappe.db.get_all(
-                "Leave Application", 
-                filters={
-                    "docstatus": 1,
-                    "employee": employee.name, 
-                    "status" : "Approved"
-                }, 
-                fields=['name', 'from_date','to_date', 'total_leave_days', 'leave_type']
-            )
-            
-            for holiday in holidaydata: 
-
-                user_task = {}
-
-                user_task['type'] = 0 # This should be a holiday task
-                user_task['endDate'] = get_one_day_later(holiday.to_date)
-                user_task['startDate'] = holiday.from_date
-                user_task['title'] = holiday.leave_type
-                user_task['project_name'] = ""
-
-                user_tasks.append(user_task)
-
-        user['tasks'] = user_tasks
-        users.append(user)
-
-    return users
-
-@frappe.whitelist()
-def planner_change_date_task(task, exp_start_date, exp_end_date): 
-
-    # Update the values
-    frappe.db.set_value('Task', task, {
-        "exp_start_date" : exp_start_date, 
-        "exp_end_date" : exp_end_date
-    })
-
-
-@frappe.whitelist()
-def planner_get_backlog(searchtext, projectText):
-
-    bfilters = {
-        'status': ["in", ["Overdue", "Open", "Working"]], 
-        '_assign' : ["not like", f'%@%'] # Make sure this is not assigned to anyone
+def get_planner_tasks(department=None):
+    """Get all tasks for the planner view with enhanced filtering"""
+    filters = {
+        "status": ["in", ["Open", "Working", "Completed", "Overdue"]],
     }
-
-    if (searchtext):
-        bfilters['subject'] = ['like', f'%{searchtext}%']
-
-    if (projectText): 
-        bfilters['project'] = ['like', f'%{searchtext}%']
-
-    backlogdata = frappe.db.get_all(
-        "Task", 
-        filters=bfilters,
-        page_length=100, # Do not overload the ERP
-        order_by='exp_start_date asc',
-        fields=['name', 'subject', 'type', 'status', 'expected_time', 'priority', 'exp_start_date', 'project', 'color']
+    
+    if department:
+        filters["department"] = department
+    
+    tasks = frappe.get_all(
+        "Task",
+        filters=filters,
+        fields=[
+            "name", "subject", "status", "priority", "project",
+            "exp_start_date", "exp_end_date", "expected_time",
+            "assigned_to", "department", "description", "color",
+            "_assign", "_comments", "_seen"
+        ],
+        order_by="exp_start_date asc"
     )
+    
+    # Enhance task data with additional information
+    for task in tasks:
+        task.color = get_task_color(task)
+        task.assignees = get_task_assignees(task)
+        task.comments = get_task_comments(task)
+        
+    return tasks
 
-    for bdata in backlogdata: 
-        # If there is a project attached, we should get the project name
-        if bdata.project: 
-            bdata["project_name"] = frappe.db.get_value("Project", bdata.project, "project_name")
+@frappe.whitelist()
+def planner_get_backlog(searchtext=None, projectText=None):
+    """Get tasks for the backlog with enhanced search"""
+    filters = {
+        "status": ["in", ["Open", "Working"]],
+        "exp_start_date": ["is", "not set"]
+    }
+    
+    if searchtext:
+        filters.update({
+            "subject": ["like", f"%{searchtext}%"]
+        })
+    
+    if projectText:
+        filters.update({
+            "project": ["like", f"%{projectText}%"]
+        })
+    
+    tasks = frappe.get_all(
+        "Task",
+        filters=filters,
+        fields=[
+            "name", "subject", "status", "priority", "project",
+            "exp_start_date", "exp_end_date", "expected_time",
+            "assigned_to", "department", "color"
+        ],
+        order_by="creation desc"
+    )
+    
+    for task in tasks:
+        task.color = get_task_color(task)
+    
+    return tasks
 
-    return backlogdata
+@frappe.whitelist()
+def update_task(task_id, updates):
+    """Update task with enhanced validation and real-time updates"""
+    if not task_id:
+        frappe.throw(_("Task ID is required"))
+    
+    task = frappe.get_doc("Task", task_id)
+    
+    # Validate updates
+    valid_fields = [
+        "status", "priority", "assigned_to", "exp_start_date",
+        "exp_end_date", "expected_time", "description"
+    ]
+    
+    for field, value in updates.items():
+        if field not in valid_fields:
+            frappe.throw(_(f"Invalid field: {field}"))
+        
+        setattr(task, field, value)
+    
+    task.modified = now_datetime()
+    task.save()
+    
+    # Emit real-time update
+    emit_task_update(task)
+    
+    return task.as_dict()
 
-# This method will get a string and return a string one day later to it in the format YYYY-MM-DD
-def get_one_day_later(strdate):
-    date = frappe.utils.getdate(strdate)
+@frappe.whitelist()
+def batch_update_tasks(updates):
+    """Update multiple tasks in batch with real-time notifications"""
+    if not updates:
+        frappe.throw(_("No updates provided"))
+    
+    updated_tasks = []
+    
+    for update in updates:
+        task_id = update.get("task_id")
+        changes = update.get("changes", {})
+        
+        if not task_id or not changes:
+            continue
+        
+        task = frappe.get_doc("Task", task_id)
+        
+        for field, value in changes.items():
+            if hasattr(task, field):
+                setattr(task, field, value)
+        
+        task.modified = now_datetime()
+        task.save()
+        updated_tasks.append(task)
+    
+    # Emit batch update
+    if updated_tasks:
+        emit_batch_update(updated_tasks)
+    
+    return [task.as_dict() for task in updated_tasks]
 
-    return add_to_date(date, days=1, as_string=True)
+def get_task_color(task):
+    """Get color based on task status and priority"""
+    status_colors = {
+        "Completed": "#10B981",  # green
+        "Working": "#3B82F6",    # blue
+        "Overdue": "#EF4444",    # red
+        "Open": "#6B7280"        # gray
+    }
+    
+    priority_colors = {
+        "High": "#DC2626",       # red
+        "Medium": "#F59E0B",     # amber
+        "Low": "#10B981"         # green
+    }
+    
+    # Return status color by default, or priority color if specified
+    return status_colors.get(task.status) or priority_colors.get(task.priority) or "#6B7280"
 
+def get_task_assignees(task):
+    """Get detailed assignee information"""
+    assignees = []
+    if task._assign:
+        assigned_users = frappe.parse_json(task._assign)
+        for user in assigned_users:
+            user_info = frappe.get_cached_value(
+                "User",
+                user,
+                ["full_name", "user_image"],
+                as_dict=True
+            )
+            if user_info:
+                assignees.append({
+                    "id": user,
+                    "name": user_info.full_name,
+                    "image": user_info.user_image
+                })
+    return assignees
 
-@frappe.whitelist(allow_guest=True)
-def oauth_providers():
-	from frappe.utils.html_utils import get_icon_html
-	from frappe.utils.password import get_decrypted_password
-	from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
-
-	out = []
-	providers = frappe.get_all(
-		"Social Login Key",
-		filters={"enable_social_login": 1},
-		fields=["name", "client_id", "base_url", "provider_name", "icon"],
-		order_by="name",
-	)
-
-	for provider in providers:
-		client_secret = get_decrypted_password("Social Login Key", provider.name, "client_secret")
-		if not client_secret:
-			continue
-
-		icon = None
-		if provider.icon:
-			if provider.provider_name == "Custom":
-				icon = get_icon_html(provider.icon, small=True)
-			else:
-				icon = f"<img src='{provider.icon}' alt={provider.provider_name}>"
-
-		if provider.client_id and provider.base_url and get_oauth_keys(provider.name):
-			out.append(
-				{
-					"name": provider.name,
-					"provider_name": provider.provider_name,
-					"auth_url": get_oauth2_authorize_url(provider.name, "/crm"),
-					"icon": icon,
-				}
-			)
-	return out
-
-@frappe.whitelist(allow_guest=True)
-def get_user_info(user=None):
-	if frappe.session.user == "Guest":
-		frappe.throw("Authentication failed", exc=frappe.AuthenticationError)
-
-	filters = {"roles.role": ["like", "Gameplan %"]}
-	if user:
-		filters["name"] = user
-
-	users = frappe.qb.get_query(
-		"User",
-		filters=filters,
-		fields=["name", "email", "enabled", "user_image", "full_name", "user_type"],
-		order_by="full_name asc",
-		distinct=True,
-	).run(as_dict=1)
-
-	roles = frappe.db.get_all("Has Role", filters={"parenttype": "User"}, fields=["role", "parent"])
-	user_profiles = []
-	user_profile_map = {u.user: u for u in user_profiles}
-	for user in users:
-		if frappe.session.user == user.name:
-			user.session_user = True
-		user_profile = user_profile_map.get(user.name)
-		if user_profile:
-			user.user_profile = user_profile.name
-			user.user_image = user_profile.image
-			user.image_background_color = user_profile.image_background_color
-			user.is_image_background_removed = user_profile.is_image_background_removed
-		user_roles = [r.role for r in roles if r.parent == user.name]
-		user.role = None
-		for role in ["Gameplan Guest", "Gameplan Member", "Gameplan Admin"]:
-			if role in user_roles:
-				user.role = role
-	return users
+def get_task_comments(task):
+    """Get formatted task comments"""
+    comments = []
+    if task._comments:
+        comment_data = frappe.parse_json(task._comments)
+        for comment in comment_data:
+            comments.append({
+                "by": comment.get("comment_email"),
+                "content": comment.get("content"),
+                "timestamp": comment.get("creation")
+            })
+    return comments

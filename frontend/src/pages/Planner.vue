@@ -94,7 +94,12 @@
                             </div>
                         </div>
 
-                        <div ref="timeline" id="timeline" class="min-h-[500px]"></div>
+                        <TimelineView 
+                            :tasks="filteredTasks"
+                            :loading="loading"
+                            @taskClick="handleTaskClick"
+                            @taskUpdate="handleTaskUpdate"
+                        />
                     </div>
                 </div>
 
@@ -251,91 +256,44 @@
 
 <script setup>
 import Layout from "@/pages/shared/Layout.vue";
-import { computed, ref, onMounted, watchEffect, reactive  } from "vue";
+import { computed, ref, onMounted, watchEffect, reactive } from "vue";
 import TaskForm from "@/components/Task/TaskForm.vue";
-import { Timeline, DataSet } from 'vis-timeline/standalone';
+import TimelineView from "@/components/Timeline/TimelineView.vue";
+import { useTaskManager } from "@/composables/useTaskManager";
 import { useRoute } from 'vue-router';
-import { createResource, createListResource, Avatar } from 'frappe-ui'
-import { getURL } from '../getURL.js' 
+import { createResource, Avatar } from 'frappe-ui';
+import { getURL } from '../getURL.js';
 
 const route = useRoute();
-const searchText = defineModel('searchText')
-const projectText = defineModel('projectText')
+const searchText = defineModel('searchText');
+const projectText = defineModel('projectText');
 
 // Enhanced reactive variables
-const viewMode = ref('week')
-const isRefreshing = ref(false)
+const viewMode = ref('week');
+const isRefreshing = ref(false);
 
-// The employees with all tasks
-var employees = {}
+// Initialize task manager
+const department = route.params.department;
+const { 
+    tasks, 
+    loading, 
+    taskStats, 
+    loadTasks, 
+    updateTask,
+    filterTasks 
+} = useTaskManager(department);
 
 // All the tasks in backlog
-var backlog = reactive([]);
+const backlog = reactive([]);
 
 // Computed properties for task statistics
-const completedTasksCount = computed(() => {
-    if (!employees || !employees.length) return 0
-    return employees.reduce((count, employee) => {
-        return count + employee.tasks.filter(task => task.status === 'Completed').length
-    }, 0)
-})
-
-const inProgressTasksCount = computed(() => {
-    if (!employees || !employees.length) return 0
-    return employees.reduce((count, employee) => {
-        return count + employee.tasks.filter(task => task.status === 'Working').length
-    }, 0)
-})
-
-const overdueTasksCount = computed(() => {
-    if (!employees || !employees.length) return 0
-    const today = new Date()
-    return employees.reduce((count, employee) => {
-        return count + employee.tasks.filter(task => {
-            const endDate = new Date(task.endDate)
-            return endDate < today && task.status !== 'Completed'
-        }).length
-    }, 0)
-})
-
-const totalTasksCount = computed(() => {
-    if (!employees || !employees.length) return 0
-    return employees.reduce((count, employee) => count + employee.tasks.length, 0)
-})
-
-// Enhanced refresh function
-const refreshData = async () => {
-    isRefreshing.value = true
-    try {
-        await Promise.all([
-            getEmployeeTasks(),
-            getBacklogTasks()
-        ])
-    } finally {
-        isRefreshing.value = false
-    }
-}
-
-const getBacklogTasks = () => {
-    const resp = createResource({
-        url: 'planner.api.planner_get_backlog', 
-        params : {
-            searchtext: searchText.value, 
-            projectText: projectText.value
-        }, 
-        auto: true,
-        onSuccess:(data) => {
-            backlog.splice(0);
-            data.forEach(task => {
-                backlog.push(task);
-            });
-        }
-    });
-}
+const completedTasksCount = computed(() => taskStats.value.completed);
+const inProgressTasksCount = computed(() => taskStats.value.inProgress);
+const overdueTasksCount = computed(() => taskStats.value.overdue);
+const totalTasksCount = computed(() => taskStats.value.total);
 
 // Get which dashboard we are supposed to load
 const dashboardName = route.params.dashboardName;
-const department = route.params.department;
 
 let breadcrumbs = [
     {
@@ -357,21 +315,36 @@ let isTaskFormActive = ref(false);
 let activeTask = ref("");
 let weekNumber = ref(0);
 
-const timeline = ref();
+const getBacklogTasks = () => {
+    const resp = createResource({
+        url: 'planner.api.planner_get_backlog', 
+        params : {
+            searchtext: searchText.value, 
+            projectText: projectText.value
+        }, 
+        auto: true,
+        onSuccess:(data) => {
+            backlog.splice(0);
+            data.forEach(task => {
+                backlog.push(task);
+            });
+        }
+    });
+}
 
 const openTaskDetail = (taskName) => {
-    activeTask = taskName
+    activeTask.value = taskName;
     isTaskFormActive.value = true;
 };
 
 const dragEndBackLog = (val) => {
-    console.log("drop", val)
+    console.log("drop", val);
 }
 
 const dragBackLog = (event, task) => {
     event.dataTransfer.effectAllowed = 'move';
 
-    var tasktitle = task.project ? task.project + ' - ' + task.subject : task.subject
+    var tasktitle = task.project ? task.project + ' - ' + task.subject : task.subject;
 
     let item = {
         id: task.name,
@@ -401,15 +374,10 @@ const dragBackLog = (event, task) => {
 
 const backToBackLog = () => {
     isTaskFormActive.value = false;
-    let selectedItem = timeline.value?.querySelector('.vis-item.vis-range.vis-selected');
+    let selectedItem = document.querySelector('.vis-item.vis-range.vis-selected');
     if (selectedItem) {
         selectedItem.classList.remove('vis-selected');
     }
-};
-
-const formatDate = (dateString) => {
-  const date = new Date(dateString);
-  return date.toISOString().split('T')[0];
 };
 
 const formatDateDisplay = (dateString) => {
@@ -430,37 +398,52 @@ const getWeekNumber = (d) => {
     return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
 }
 
-const getEmployeeTasks = () => {
-    const resource = createResource({
-        url: 'planner.api.get_planner_tasks', 
-        params : {
-            department: department
-        }, 
-        auto: true,
-        onSuccess: (data) => {
-            employees = resource.data
-            initTimeLine()
-        }
+// Filter tasks based on search and project
+const filteredTasks = computed(() => {
+    return filterTasks({
+        search: searchText.value,
+        project: projectText.value,
+        status: ['Working', 'Completed', 'Overdue']
     });
-}
+});
 
-const timelineInfoRef = ref();
+// Handle timeline events
+const handleTaskClick = (taskId) => {
+    openTaskDetail(taskId);
+};
 
-// Watch for view mode changes
-watchEffect(() => {
-    if (employees && employees.length > 0) {
-        initTimeLine()
+const handleTaskUpdate = async (update) => {
+    try {
+        await updateTask(update.id, {
+            exp_start_date: update.start,
+            exp_end_date: update.end,
+            assigned_to: update.group
+        });
+    } catch (error) {
+        console.error('Error updating task:', error);
     }
-})
+};
+
+// Enhanced refresh function
+const refreshData = async () => {
+    isRefreshing.value = true;
+    try {
+        await Promise.all([
+            loadTasks(true),
+            getBacklogTasks()
+        ]);
+    } finally {
+        isRefreshing.value = false;
+    }
+};
 
 onMounted(() => {
     searchText.value = "";
     projectText.value = "";
-
-    getEmployeeTasks();
-    getBacklogTasks();
-    
     weekNumber.value = getWeekNumber(new Date(currentDate.value));
+    
+    loadTasks();
+    getBacklogTasks();
     
     window.addEventListener('scroll', () => {
         if (window.scrollY > 100) {
@@ -468,27 +451,8 @@ onMounted(() => {
         } else {
             timelineInfoRef.value?.classList.remove('scrolled');
         }
-        
-        var element = document.querySelector(".vis-panel.vis-top");
-        if (window.scrollY > 200) {
-            if (element) {
-                element.classList.add('scroll');
-                element.style.top = (window.scrollY - 135) + 'px';
-            }
-        } else {
-            if (element) {
-                element.classList.remove('scroll');
-                element.style.top = '0px';
-            }
-        }
     });
 });
-
-const initTimeLine = () => {
-    // Implementation will be added in next step
-    console.log("Timeline initialization - enhanced version");
-}
-
 </script>
 
 <style scoped>
