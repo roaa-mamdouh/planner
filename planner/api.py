@@ -3,6 +3,11 @@ from frappe import _
 from frappe.utils import now_datetime, get_datetime, getdate, add_days, date_diff
 from .realtime import emit_task_update, emit_batch_update
 
+@frappe.whitelist(allow_guest=True)
+def oauth_providers():
+    """Get OAuth providers for authentication (required by frappe-ui)"""
+    return []
+
 @frappe.whitelist()
 def verify_task_structure():
     """Verify Task doctype structure and required fields"""

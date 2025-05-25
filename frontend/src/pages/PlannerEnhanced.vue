@@ -69,13 +69,13 @@
                 <div class="flex flex-col xl:flex-row gap-6 mt-6">
                     <!-- Workload Timeline -->
                     <div class="flex-1">
-                        <WorkloadView 
+                        <WorkloadViewEnhanced 
                             :assignees="assignees"
                             :tasks="tasks"
                             :loading="loading"
                             @taskClick="handleTaskClick"
                             @taskMove="handleTaskMove"
-                            @capacityChange="handleCapacityChange"
+                            @taskUpdate="handleTaskUpdate"
                         />
                     </div>
 
@@ -137,7 +137,7 @@ import Layout from "@/pages/shared/Layout.vue"
 import { ref, computed, onMounted, watch } from "vue"
 import { useRoute } from 'vue-router'
 import { Button, TextInput } from 'frappe-ui'
-import WorkloadView from "@/components/Workload/WorkloadView.vue"
+import WorkloadViewEnhanced from "@/components/Workload/WorkloadViewEnhanced.vue"
 import TaskForm from "@/components/Task/TaskForm.vue"
 import { useWorkloadManager } from "@/composables/useWorkloadManager"
 
@@ -222,6 +222,10 @@ const handleTaskClick = (taskId) => {
 
 const handleTaskMove = async (data) => {
     await moveTask(data.taskId, data.assigneeId, data.startDate, data.endDate)
+}
+
+const handleTaskUpdate = async (data) => {
+    await updateTask(data.taskId, data.updates)
 }
 
 const handleCapacityChange = async (settings) => {
