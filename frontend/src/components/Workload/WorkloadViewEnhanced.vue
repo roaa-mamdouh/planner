@@ -493,12 +493,19 @@ const getStatusIndicatorClass = (utilization) => {
   return 'bg-blue-500'
 }
 
+// Utility function to format date as YYYY-MM-DD
+const formatDateForAPI = (date) => {
+  if (!date) return null
+  const d = new Date(date)
+  return d.getFullYear() + '-' + 
+         String(d.getMonth() + 1).padStart(2, '0') + '-' + 
+         String(d.getDate()).padStart(2, '0')
+}
+
 // Drag and drop handlers
 const handleDragStart = (event, task) => {
-  event.dataTransfer.setData('text/plain', JSON.stringify({
-    taskId: task.id,
-    type: 'task'
-  }))
+  event.dataTransfer.setData('application/json', JSON.stringify(task))
+  event.dataTransfer.effectAllowed = 'move'
 }
 
 const handleDragOver = (event, assigneeId, dateKey) => {
@@ -526,28 +533,32 @@ const handleDrop = (event, assigneeId, date) => {
   dragOverAssignee.value = null
   dragOverDate.value = null
   
-  const data = JSON.parse(event.dataTransfer.getData('text/plain'))
-  if (data.type === 'task') {
-    emit('taskMove', {
-      taskId: data.taskId,
-      assigneeId,
-      startDate: date,
-      endDate: new Date(date.getTime() + 24 * 60 * 60 * 1000) // Add 1 day
-    })
-  }
+  const taskData = JSON.parse(event.dataTransfer.getData('application/json'))
+  
+  // Calculate end date based on task duration (in days)
+  const startDate = new Date(date)
+  const endDate = new Date(startDate)
+  const durationDays = Math.max(1, Math.ceil((taskData.duration || 8) / 8)) // Convert hours to days, minimum 1 day
+  endDate.setDate(startDate.getDate() + durationDays - 1)
+  
+  emit('taskMove', {
+    taskId: taskData.id,
+    assigneeId,
+    startDate: formatDateForAPI(startDate),
+    endDate: formatDateForAPI(endDate)
+  })
 }
 
 const handleUnscheduledDrop = (event, assigneeId) => {
   event.preventDefault()
-  const data = JSON.parse(event.dataTransfer.getData('text/plain'))
-  if (data.type === 'task') {
-    emit('taskMove', {
-      taskId: data.taskId,
-      assigneeId,
-      startDate: null,
-      endDate: null
-    })
-  }
+  const taskData = JSON.parse(event.dataTransfer.getData('application/json'))
+  
+  emit('taskMove', {
+    taskId: taskData.id,
+    assigneeId,
+    startDate: null,
+    endDate: null
+  })
 }
 
 const startResize = (event, task, direction) => {
