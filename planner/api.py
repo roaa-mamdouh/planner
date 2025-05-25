@@ -170,6 +170,16 @@ def get_workload_data(department=None, start_date=None, end_date=None):
             print("Sample employees:")
             for emp in employees[:2]:
                 print(f"- {emp['name']} ({emp['id']})")
+        else:
+            # If no employees found, create a placeholder for unassigned tasks
+            print("No employees found, creating placeholder for unassigned tasks")
+            employees = [{
+                "id": "unassigned",
+                "name": "Unassigned",
+                "email": "",
+                "image": None,
+                "department": department
+            }]
         
         # Get all tasks (scheduled and unscheduled)
         all_tasks = get_all_tasks(department, start_date, end_date)
@@ -177,7 +187,7 @@ def get_workload_data(department=None, start_date=None, end_date=None):
         if all_tasks:
             print("Sample tasks:")
             for task in all_tasks[:2]:
-                print(f"- {task['title']} (Assignee: {task['assignee']})")
+                print(f"- {task['title']} (Assignee: {task.get('assignee', 'None')})")
         
         # Process workload data
         workload_data = {
@@ -188,6 +198,7 @@ def get_workload_data(department=None, start_date=None, end_date=None):
     
         # Process each employee
         for employee in employees:
+            # Filter tasks by this employee
             employee_tasks = [task for task in all_tasks if task.get("assignee") == employee["id"]]
             print(f"\nEmployee {employee['name']}: {len(employee_tasks)} tasks")
             
@@ -197,7 +208,7 @@ def get_workload_data(department=None, start_date=None, end_date=None):
             assignee_data = {
                 "id": employee["id"],
                 "name": employee["name"],
-                "email": employee["email"],
+                "email": employee.get("email", ""),
                 "image": employee.get("image"),
                 "role": employee.get("role", "Employee"),
                 "department": employee.get("department"),
@@ -207,7 +218,28 @@ def get_workload_data(department=None, start_date=None, end_date=None):
             }
             
             workload_data["assignees"].append(assignee_data)
-            workload_data["tasks"].extend(employee_tasks)
+        
+        # Add all tasks to the response (even if they don't have assignees)
+        workload_data["tasks"] = all_tasks
+        
+        # Add unassigned tasks specifically
+        unassigned_tasks = [task for task in all_tasks if not task.get("assignee") or task.get("assignee") == "unassigned"]
+        if unassigned_tasks:
+            print(f"\nFound {len(unassigned_tasks)} unassigned tasks")
+            # Ensure unassigned tasks are included
+            # If we don't have an "unassigned" employee, add one
+            if not any(a["id"] == "unassigned" for a in workload_data["assignees"]):
+                workload_data["assignees"].append({
+                    "id": "unassigned",
+                    "name": "Unassigned",
+                    "email": "",
+                    "image": None,
+                    "role": "Unassigned",
+                    "department": department,
+                    "capacity": 0,
+                    "working_hours": {},
+                    "availability": 0
+                })
         
         print(f"\n=== Final Workload Data ===")
         print(f"Total Assignees: {len(workload_data['assignees'])}")
@@ -216,6 +248,7 @@ def get_workload_data(department=None, start_date=None, end_date=None):
         
     except Exception as e:
         frappe.logger().error(f"Error in get_workload_data: {str(e)}")
+        print(f"ERROR: Exception in get_workload_data: {str(e)}")
         frappe.throw(_("Error getting workload data: {0}").format(str(e)))
 
 @frappe.whitelist()
@@ -466,9 +499,10 @@ def get_all_tasks(department=None, start_date=None, end_date=None):
             print(f"DEBUG: Department {department} exists: {dept_exists}")
             if not dept_exists:
                 print(f"WARNING: Department {department} not found")
-                return []
+                department = None  # Reset department to get all tasks regardless
+                print("DEBUG: Reset department filter to None to show all tasks")
         
-        # Apply filters
+        # Apply filters - IMPORTANT: Don't filter by department if it doesn't exist
         filters = {
             "status": ["in", ["Open", "Working", "Completed", "Overdue"]]
         }
@@ -496,6 +530,10 @@ def get_all_tasks(department=None, start_date=None, end_date=None):
             print(f"DEBUG: Sample filtered task: {filtered_tasks[0]}")
         else:
             print("DEBUG: No tasks match the filters")
+            # If no tasks found and department filter was applied, try without department filter
+            if department:
+                print("DEBUG: Trying without department filter...")
+                return get_all_tasks(None, start_date, end_date)
         
         formatted_tasks = []
     
@@ -535,11 +573,14 @@ def get_all_tasks(department=None, start_date=None, end_date=None):
                 print(f"DEBUG: Successfully formatted task {task.name}")
             except Exception as e:
                 frappe.logger().error(f"Error formatting task {task.name}: {str(e)}")
+                print(f"ERROR: Failed to format task {task.name}: {str(e)}")
                 continue
         
+        print(f"DEBUG: Returning {len(formatted_tasks)} formatted tasks")
         return formatted_tasks
     except Exception as e:
         frappe.logger().error(f"Error in get_all_tasks: {str(e)}")
+        print(f"ERROR: Exception in get_all_tasks: {str(e)}")
         return []
 
 def calculate_employee_capacity(employee_id, start_date=None, end_date=None):
@@ -797,3 +838,65 @@ def get_capacity_analysis(department=None, start_date=None, end_date=None):
         })
     
     return analysis
+
+@frappe.whitelist()
+def direct_query_tasks():
+    """Direct database query for debugging purposes"""
+    try:
+        print("\n=== Direct Task Query ===")
+        
+        # Get raw task data
+        tasks = frappe.db.sql("""
+            SELECT 
+                name, subject, status, priority,
+                exp_start_date, exp_end_date, expected_time,
+                department, _assign
+            FROM tabTask
+        """, as_dict=True)
+        
+        print(f"Direct SQL query found {len(tasks)} tasks")
+        
+        # Try to parse _assign for each task
+        processed_tasks = []
+        for task in tasks:
+            try:
+                assignees = []
+                if task._assign:
+                    try:
+                        assignees = frappe.parse_json(task._assign)
+                    except Exception as e:
+                        print(f"Error parsing _assign for task {task.name}: {str(e)}")
+                
+                processed_task = {
+                    "id": task.name,
+                    "title": task.subject,
+                    "status": task.status,
+                    "priority": task.priority,
+                    "start_date": task.exp_start_date,
+                    "end_date": task.exp_end_date,
+                    "expected_time": task.expected_time,
+                    "department": task.department,
+                    "raw_assign": task._assign,
+                    "assignees": assignees
+                }
+                processed_tasks.append(processed_task)
+            except Exception as e:
+                print(f"Error processing task {task.name}: {str(e)}")
+        
+        # Get system info
+        system_info = {
+            "site": frappe.local.site,
+            "user": frappe.session.user,
+            "timestamp": frappe.utils.now()
+        }
+        
+        return {
+            "raw_tasks": tasks,
+            "processed_tasks": processed_tasks,
+            "system_info": system_info
+        }
+    
+    except Exception as e:
+        frappe.logger().error(f"Error in direct_query_tasks: {str(e)}")
+        print(f"ERROR: Exception in direct_query_tasks: {str(e)}")
+        return {"error": str(e)}

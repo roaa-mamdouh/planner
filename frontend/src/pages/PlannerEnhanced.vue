@@ -107,6 +107,7 @@
                                 </TextInput>
                                 
                                 <div class="max-h-[500px] overflow-y-auto">
+                                    <!-- Task items -->
                                     <div 
                                         v-for="task in filteredUnscheduledTasks" 
                                         :key="task.id"
@@ -119,8 +120,20 @@
                                                 <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                                     {{ task.duration }}h • {{ getAssigneeName(task.assignee) }}
                                                 </div>
+                                                <div v-if="task.project" class="mt-1 text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded inline-block">
+                                                    {{ task.project }}
+                                                </div>
+                                            </div>
+                                            <div class="text-xs rounded-full px-2 py-1" :class="getStatusClass(task.status)">
+                                                {{ task.status }}
                                             </div>
                                         </div>
+                                    </div>
+                                    
+                                    <!-- Empty state -->
+                                    <div v-if="filteredUnscheduledTasks.length === 0" class="py-8 text-center">
+                                        <FeatherIcon name="clipboard" class="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+                                        <p class="text-gray-500 dark:text-gray-400 text-sm">No unscheduled tasks found</p>
                                     </div>
                                 </div>
                             </div>
@@ -142,14 +155,9 @@ import TaskForm from "@/components/Task/TaskForm.vue"
 import { useWorkloadManager } from "@/composables/useWorkloadManager"
 
 const route = useRoute()
-console.log("\n=== PlannerEnhanced Route Parameters ===")
-console.log("Route params:", route.params)
 
 const department = ref(route.params.department)
 const dashboardName = ref(route.params.dashboardName)
-
-console.log("Department:", department.value)
-console.log("Dashboard Name:", dashboardName.value)
 
 // Breadcrumbs
 const breadcrumbs = [
@@ -164,8 +172,6 @@ const breadcrumbs = [
 ]
 
 // Initialize workload manager
-console.log("\nInitializing workload manager with department:", department.value)
-
 const {
     assignees,
     tasks,
@@ -181,10 +187,8 @@ const {
 
 // Watch for department changes
 watch(() => route.params.department, (newDepartment) => {
-    console.log("\nDepartment changed:", newDepartment)
     if (newDepartment) {
         department.value = newDepartment
-        console.log("Reloading workload data with new department:", department.value)
         loadWorkloadData(null, null, true)
     }
 }, { immediate: true })
@@ -197,17 +201,19 @@ const searchText = ref("")
 
 // Computed
 const unscheduledTasks = computed(() => {
-    return tasks.value.filter(task => !task.isScheduled)
+    // Include all tasks that don't have both start and end dates,
+    // including those that might not be assigned to anyone
+    return tasks.value.filter(task => !task.startDate || !task.endDate);
 })
 
 const filteredUnscheduledTasks = computed(() => {
-    if (!searchText.value) return unscheduledTasks.value
+    if (!searchText.value) return unscheduledTasks.value;
     
-    const search = searchText.value.toLowerCase()
+    const search = searchText.value.toLowerCase();
     return unscheduledTasks.value.filter(task => 
         task.title.toLowerCase().includes(search) ||
         task.project?.toLowerCase().includes(search)
-    )
+    );
 })
 
 // Methods
@@ -228,25 +234,30 @@ const handleTaskUpdate = async (data) => {
     await updateTask(data.taskId, data.updates)
 }
 
-const handleCapacityChange = async (settings) => {
-    // Update capacity settings
-    console.log('Capacity settings updated:', settings)
-}
-
 const closeTaskDetails = () => {
     activeTask.value = null
     isTaskFormActive.value = false
 }
 
 const getAssigneeName = (assigneeId) => {
-    const assignee = assignees.value.find(a => a.id === assigneeId)
-    return assignee ? assignee.name : 'Unassigned'
+    if (!assigneeId || assigneeId === 'unassigned') {
+        return 'Unassigned';
+    }
+    const assignee = assignees.value.find(a => a.id === assigneeId);
+    return assignee ? assignee.name : 'Unassigned';
+}
+
+const getStatusClass = (status) => {
+    switch (status) {
+        case 'Completed': return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300';
+        case 'Working': return 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300';
+        case 'Overdue': return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300';
+        default: return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300';
+    }
 }
 
 // Initialize
 onMounted(() => {
-    console.log("\nComponent mounted, loading workload data...")
-    console.log("Initial department:", department.value)
     loadWorkloadData()
 })
 </script>
