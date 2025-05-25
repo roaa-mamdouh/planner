@@ -18,7 +18,15 @@ const routes = [
   {
     path: "/planner/:dashboardName/:department",
     name: "Planner",
-    component: () => import("@/pages/Planner.vue"),
+    component: () => import("@/pages/PlannerEnhanced.vue"),
+    meta: {
+      requiresAuth: true
+    }
+  },
+  {
+    path: "/planner-enhanced/:dashboardName/:department",
+    name: "PlannerEnhanced",
+    component: () => import("@/pages/PlannerEnhanced.vue"),
     meta: {
       requiresAuth: true
     }

@@ -373,13 +373,36 @@ const sortDocinfo = () => {
 
 const updateValue = (field, value) => {
 
+    // Utility function to format date as YYYY-MM-DD
+    const formatDateForAPI = (date) => {
+        if (!date) return null
+        if (typeof date === 'string') {
+            // If it's already a string in YYYY-MM-DD format, return as is
+            if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                return date
+            }
+            // Otherwise parse it first
+            date = new Date(date)
+        }
+        const d = new Date(date)
+        return d.getFullYear() + '-' +
+            String(d.getMonth() + 1).padStart(2, '0') + '-' +
+            String(d.getDate()).padStart(2, '0')
+    }
+
+    // Format date fields before sending
+    let formattedValue = value
+    if (field === 'exp_start_date' || field === 'exp_end_date') {
+        formattedValue = formatDateForAPI(value)
+    }
+
     const resp = createResource({
         url: 'frappe.client.set_value',
         params: {
             doctype: "Task",
             name: props.task,
             fieldname: field,
-            value: value
+            value: formattedValue
         },
         auto: true,
         onError: (err) => {
