@@ -32,6 +32,14 @@ const routes = [
     }
   },
   {
+    path: "/planner-roster/:dashboardName/:department?",
+    name: "PlannerRoster",
+    component: () => import("@/pages/PlannerRoster.vue"),
+    meta: {
+      requiresAuth: true
+    }
+  },
+  {
     path: "/login",
     name: "Login",
     component: () => import("@/pages/Login.vue"),
