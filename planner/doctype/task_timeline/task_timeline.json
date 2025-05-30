@@ -1,0 +1,188 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2024-12-19 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "task",
+  "assignee",
+  "column_break_1",
+  "start_date",
+  "end_date",
+  "section_break_1",
+  "estimated_hours",
+  "actual_hours",
+  "progress_percent",
+  "column_break_2",
+  "priority_score",
+  "complexity_rating",
+  "section_break_2",
+  "dependencies",
+  "skill_requirements",
+  "section_break_3",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "TL-.YYYY.-.MM.-.DD.-",
+   "reqd": 1
+  },
+  {
+   "fieldname": "task",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Task",
+   "options": "Task",
+   "reqd": 1
+  },
+  {
+   "fieldname": "assignee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Assignee",
+   "options": "User"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "start_date",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Start Date"
+  },
+  {
+   "fieldname": "end_date",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "End Date"
+  },
+  {
+   "fieldname": "section_break_1",
+   "fieldtype": "Section Break",
+   "label": "Time Tracking"
+  },
+  {
+   "default": "0.0",
+   "fieldname": "estimated_hours",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Estimated Hours",
+   "precision": "2"
+  },
+  {
+   "default": "0.0",
+   "fieldname": "actual_hours",
+   "fieldtype": "Float",
+   "label": "Actual Hours",
+   "precision": "2"
+  },
+  {
+   "default": "0.0",
+   "fieldname": "progress_percent",
+   "fieldtype": "Percent",
+   "label": "Progress %"
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "50",
+   "fieldname": "priority_score",
+   "fieldtype": "Int",
+   "label": "Priority Score",
+   "description": "1-100, higher is more priority"
+  },
+  {
+   "default": "Medium",
+   "fieldname": "complexity_rating",
+   "fieldtype": "Select",
+   "label": "Complexity Rating",
+   "options": "Low\nMedium\nHigh\nCritical"
+  },
+  {
+   "fieldname": "section_break_2",
+   "fieldtype": "Section Break",
+   "label": "Dependencies & Skills"
+  },
+  {
+   "fieldname": "dependencies",
+   "fieldtype": "JSON",
+   "label": "Dependencies",
+   "description": "JSON array of dependent task IDs"
+  },
+  {
+   "fieldname": "skill_requirements",
+   "fieldtype": "JSON",
+   "label": "Skill Requirements",
+   "description": "JSON array of required skills"
+  },
+  {
+   "fieldname": "section_break_3",
+   "fieldtype": "Section Break",
+   "label": "Additional Information"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Text Editor",
+   "label": "Notes"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2024-12-19 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Planner",
+ "name": "Task Timeline",
+ "naming_rule": "By Naming Series",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Projects Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Projects User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

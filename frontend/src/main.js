@@ -1,5 +1,6 @@
 import './index.css'
 import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 import router from "./router";
 import App from './App.vue'
 import { useDarkMode } from './composables/useDarkMode'
@@ -24,9 +25,13 @@ import '@vuepic/vue-datepicker/dist/main.css';
 const { initializeDarkMode } = useDarkMode()
 initializeDarkMode()
 
+// Create Pinia store
+const pinia = createPinia()
+
 const app = createApp(App);
 setConfig('resourceFetcher', frappeRequest)
 app.use(router)
+app.use(pinia)
 app.use(resourcesPlugin)
 app.component('Button', Button)
 app.component('Breadcrumbs', Breadcrumbs)
