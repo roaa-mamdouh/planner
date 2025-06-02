@@ -56,7 +56,7 @@ class TaskService:
                     frappe.logger().warning(f"Invalid user {assignee} assigned to task {task.name}")
         except Exception as e:
             frappe.logger().error(f"Error getting primary assignee for task {task.name}: {str(e)}")
-        return "Unassigned"
+        return "unassigned"
 
     @staticmethod
     def format_task(task):
@@ -67,7 +67,7 @@ class TaskService:
                 assignee = TaskService.get_primary_assignee(task)
             except Exception as e:
                 frappe.logger().error(f"Error getting primary assignee: {str(e)}")
-                assignee = "Unassigned"
+                assignee = "unassigned"
 
             # Get task color with fallback
             try:
@@ -232,7 +232,7 @@ class TaskService:
         
         # Update assignment
         if assignee_id:
-            if assignee_id == "Unassigned":
+            if assignee_id == "unassigned":
                 task._assign = None
             else:
                 # Get employee record to validate

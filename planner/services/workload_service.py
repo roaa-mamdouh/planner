@@ -8,54 +8,36 @@ class WorkloadService:
     def get_department_employees(department=None):
         """Get all employees in a department with their details"""
         try:
-            filters = {"status": "Active"}
-            if department:
-                # Use department_name field instead of department for filtering
-                filters["department_name"] = department
+            # Get only active employees with specific fields
+            query = """
+                SELECT 
+                    name, employee_name, user_id, image,
+                    department, designation, company
+                FROM `tabEmployee`
+                WHERE status = 'Active'
+                AND user_id IS NOT NULL
+            """
             
-            try:
-                employees = frappe.get_all(
-                    "Employee",
-                    filters=filters,
-                    fields=[
-                        "name", "employee_name", "user_id", "image", 
-                        "department_name", "designation", "company"
-                    ]
-                )
-            except Exception as e:
-                frappe.logger().error(f"Error getting employees: {str(e)}")
-                return [{
-                    "id": "unassigned",
-                    "name": "Unassigned",
-                    "email": "",
-                    "image": None,
-                    "department": department
-                }]
+            if department:
+                query += " AND department = %(department)s"
+            
+            employees = frappe.db.sql(query, {"department": department}, as_dict=True)
             
             if not employees:
-                return [{
-                    "id": "unassigned",
-                    "name": "Unassigned",
-                    "email": "",
-                    "image": None,
-                    "department": department
-                }]
+                frappe.logger().warning(f"No active employees found for department: {department}")
+                return []
             
             employee_list = []
             for emp in employees:
                 try:
-                    # Get user details if user_id exists
                     user_info = {}
                     if emp.user_id:
-                        try:
-                            user_info = frappe.get_cached_value(
-                                "User", 
-                                emp.user_id, 
-                                ["full_name", "user_image", "email"], 
-                                as_dict=True
-                            ) or {}
-                        except Exception as user_error:
-                            frappe.logger().error(f"Error getting user info for {emp.user_id}: {str(user_error)}")
+                        user_info = frappe.get_cached_value(
+                            "User", 
+                            emp.user_id, 
+                            ["full_name", "user_image", "email"], 
+                            as_dict=True
+                        ) or {}
                     
                     employee_data = {
                         "id": emp.user_id or emp.name,
@@ -72,309 +54,261 @@ class WorkloadService:
                     frappe.logger().error(f"Error processing employee {emp.name}: {str(emp_error)}")
                     continue
             
-            if not employee_list:
-                return [{
-                    "id": "unassigned",
-                    "name": "Unassigned",
-                    "email": "",
-                    "image": None,
-                    "department": department
-                }]
-            
             return employee_list
             
         except Exception as e:
             frappe.logger().error(f"Error in get_department_employees: {str(e)}")
-            return [{
-                "id": "unassigned",
-                "name": "Unassigned",
-                "email": "",
-                "image": None,
-                "department": department
-            }]
+            return []
 
     @staticmethod
-    def get_employee_working_hours(employee_id):
-        """Get employee working hours from HRMS"""
-        try:
-            if employee_id == "unassigned":
-                # Return default working hours for unassigned
-                return {
-                    "hours_per_day": 8,
-                    "days_per_week": 5,
-                    "holiday_list": None,
-                    "start_time": "09:00",
-                    "end_time": "17:00"
-                }
-            employee = frappe.get_doc("Employee", {"user_id": employee_id})
-            holiday_list = employee.holiday_list or WorkloadService.get_default_holiday_list(employee.company)
-            
-            return {
-                "hours_per_day": 8,
-                "days_per_week": 5,
-                "holiday_list": holiday_list,
-                "start_time": "09:00",
-                "end_time": "17:00"
-            }
-        except Exception as e:
-            frappe.logger().error(f"Error getting working hours for {employee_id}: {str(e)}")
-            return {
-                "hours_per_day": 8,
-                "days_per_week": 5,
-                "holiday_list": None,
-                "start_time": "09:00",
-                "end_time": "17:00"
-            }
+    def _get_unassigned_employee(department=None):
+        """Helper method to create unassigned employee entry"""
+        return {
+            "id": "unassigned",
+            "employee_id": "unassigned",
+            "name": "Unassigned",
+            "email": "",
+            "image": None,
+            "role": "Unassigned",
+            "department": department or "Unknown",
+            "company": None
+        }
 
     @staticmethod
     def get_working_days(employee_id, start_date, end_date):
         """Calculate working days excluding weekends and holidays"""
         try:
-            # Handle case when dates are None
             if not start_date or not end_date:
                 return 0
 
-            # Convert string dates to datetime if needed
-            if isinstance(start_date, str):
-                start_date = getdate(start_date)
-            if isinstance(end_date, str):
-                end_date = getdate(end_date)
+            start_date = getdate(start_date)
+            end_date = getdate(end_date)
 
-            # Skip holiday calculation for unassigned
-            if employee_id == "unassigned":
-                total_days = date_diff(end_date, start_date) + 1
-                weeks = total_days // 7
-                remaining_days = total_days % 7
-                
-                weekend_days = 0
-                current_date = start_date
-                for i in range(remaining_days):
-                    if current_date.weekday() >= 5:
-                        weekend_days += 1
-                    current_date = add_days(current_date, 1)
-                
-                return total_days - (weeks * 2) - weekend_days
-
-            # For assigned employees, include holiday calculation
-            try:
-                from hrms.hr.utils import get_holidays_for_employee
-            except ImportError:
-                get_holidays_for_employee = None
-            
-            holiday_dates = []
-            if get_holidays_for_employee:
-                holidays = get_holidays_for_employee(employee_id, start_date, end_date)
-                holiday_dates = [holiday.holiday_date for holiday in holidays]
-            
+            # Basic working days calculation (excluding weekends)
+            total_days = date_diff(end_date, start_date) + 1
             working_days = 0
             current_date = start_date
             
             while current_date <= end_date:
-                if current_date.weekday() < 5 and current_date not in holiday_dates:
+                if current_date.weekday() < 5:  # Monday = 0, Sunday = 6
                     working_days += 1
                 current_date = add_days(current_date, 1)
             
-            return working_days
+            # For assigned employees, subtract holidays if available
+            if employee_id != "unassigned":
+                try:
+                    # Try to get holidays if HRMS is available
+                    from hrms.hr.utils import get_holidays_for_employee
+                    holidays = get_holidays_for_employee(employee_id, start_date, end_date)
+                    holiday_count = len([h for h in holidays if getdate(h.holiday_date).weekday() < 5])
+                    working_days -= holiday_count
+                except (ImportError, Exception):
+                    # HRMS not available or error getting holidays
+                    pass
+            
+            return max(0, working_days)
             
         except Exception as e:
             frappe.logger().error(f"Error calculating working days: {str(e)}")
-            return 0  # Return 0 working days on error instead of trying fallback calculation
-
-    @staticmethod
-    def get_employee_leaves(employee_id, start_date, end_date):
-        """Get employee leave applications in date range"""
-        try:
-            leaves = frappe.get_all(
-                "Leave Application",
-                filters={
-                    "employee": {"in": frappe.get_all("Employee", {"user_id": employee_id}, "name")},
-                    "status": "Approved",
-                    "from_date": ["<=", end_date],
-                    "to_date": [">=", start_date]
-                },
-                fields=["from_date", "to_date", "total_leave_days", "leave_type"]
-            )
-            
-            return [{"hours": leave.total_leave_days * 8} for leave in leaves]
-            
-        except Exception as e:
-            frappe.logger().error(f"Error getting employee leaves: {str(e)}")
-            return []
+            return 0
 
     @staticmethod
     def calculate_employee_capacity(employee_id, start_date=None, end_date=None):
         """Calculate employee capacity and availability"""
-        working_hours = WorkloadService.get_employee_working_hours(employee_id)
-        
-        if not start_date:
-            start_date = getdate()
-        if not end_date:
-            end_date = add_days(start_date, 30)
-        
-        start_date = getdate(start_date)
-        end_date = getdate(end_date)
-        
-        working_days = WorkloadService.get_working_days(employee_id, start_date, end_date)
-        daily_hours = working_hours.get("hours_per_day", 8)
-        total_capacity = working_days * daily_hours
-        
-        leaves = WorkloadService.get_employee_leaves(employee_id, start_date, end_date)
-        leave_hours = sum(leave.get("hours", daily_hours) for leave in leaves)
-        
-        available_capacity = total_capacity - leave_hours
-        
-        return {
-            "total_capacity": total_capacity,
-            "available_capacity": available_capacity,
-            "working_hours": working_hours,
-            "working_days": working_days,
-            "leave_hours": leave_hours,
-            "availability": (available_capacity / total_capacity * 100) if total_capacity > 0 else 0
-        }
+        try:
+            if not start_date:
+                start_date = getdate()
+            if not end_date:
+                end_date = add_days(start_date, 30)
+            
+            start_date = getdate(start_date)
+            end_date = getdate(end_date)
+            
+            working_days = WorkloadService.get_working_days(employee_id, start_date, end_date)
+            daily_hours = 8  # Standard 8 hours per day
+            total_capacity = working_days * daily_hours
+            
+            # Get leave hours if employee is not unassigned
+            leave_hours = 0
+            if employee_id != "unassigned":
+                try:
+                    leaves = frappe.get_all(
+                        "Leave Application",
+                        filters={
+                            "employee": {"in": frappe.get_all("Employee", {"user_id": employee_id}, "name")},
+                            "status": "Approved",
+                            "from_date": ["<=", end_date],
+                            "to_date": [">=", start_date]
+                        },
+                        fields=["total_leave_days"]
+                    )
+                    leave_hours = sum(leave.total_leave_days * daily_hours for leave in leaves)
+                except Exception:
+                    pass
+            
+            available_capacity = max(0, total_capacity - leave_hours)
+            
+            return {
+                "total_capacity": total_capacity,
+                "available_capacity": available_capacity,
+                "working_days": working_days,
+                "leave_hours": leave_hours,
+                "availability": (available_capacity / total_capacity * 100) if total_capacity > 0 else 0
+            }
+            
+        except Exception as e:
+            frappe.logger().error(f"Error calculating capacity for {employee_id}: {str(e)}")
+            return {
+                "total_capacity": 0,
+                "available_capacity": 0,
+                "working_days": 0,
+                "leave_hours": 0,
+                "availability": 0
+            }
 
     @staticmethod
     def get_workload_data(department=None, start_date=None, end_date=None):
         """Get comprehensive workload data for planning"""
         try:
-            # Debug logging for department filter
-            frappe.logger().info(f"get_workload_data: Requested department: {department}")
+            frappe.logger().info(f"Getting workload data for department: {department}")
 
-            # Check if department exists
+            # Validate department exists if specified
             if department and not frappe.db.exists("Department", department):
-                frappe.logger().warning(f"get_workload_data: Department {department} not found")
-                # Return empty workload data for invalid department
-                return {
-                    "assignees": [],
-                    "tasks": [],
-                    "capacity_settings": WorkloadService.get_capacity_settings(department)
-                }
+                frappe.logger().warning(f"Department {department} not found")
+                return WorkloadService._get_empty_workload_data(department)
 
+            # Get employees and tasks
             employees = WorkloadService.get_department_employees(department)
-            frappe.logger().info(f"get_workload_data: Found {len(employees)} employees")
-
-            if not employees:
-                employees = [{
-                    "id": "unassigned",
-                    "name": "Unassigned",
-                    "email": "",
-                    "image": None,
-                    "department": department
-                }]
-            
             tasks = TaskService.get_all_tasks(department, start_date, end_date)
-            frappe.logger().info(f"get_workload_data: Found {len(tasks)} tasks")
             
-            workload_data = {
-                "assignees": [],
-                "tasks": tasks,
-                "capacity_settings": WorkloadService.get_capacity_settings(department)
-            }
-        
+            frappe.logger().info(f"Found {len(employees)} employees and {len(tasks)} tasks")
+            
+            # Process assignees with capacity information
+            assignees = []
             for employee in employees:
                 capacity_info = WorkloadService.calculate_employee_capacity(
-                    employee["id"], 
-                    start_date, 
-                    end_date
+                    employee["id"], start_date, end_date
                 )
                 
                 assignee_data = {
-                    "id": employee["id"],
-                    "name": employee["name"],
-                    "email": employee.get("email", ""),
-                    "image": employee.get("image"),
-                    "role": employee.get("role", "Employee"),
-                    "department": employee.get("department"),
-                    "capacity": capacity_info["total_capacity"],
-                    "working_hours": capacity_info["working_hours"],
+                    **employee,
+                    "capacity": capacity_info["available_capacity"],
+                    "total_capacity": capacity_info["total_capacity"],
+                    "working_hours": {
+                        "hours_per_day": 8,
+                        "days_per_week": 5,
+                        "start_time": "09:00",
+                        "end_time": "17:00"
+                    },
                     "availability": capacity_info["availability"]
                 }
-                
-                workload_data["assignees"].append(assignee_data)
+                assignees.append(assignee_data)
             
-            return workload_data
+            return {
+                "assignees": assignees,
+                "tasks": tasks,
+                "capacity_settings": WorkloadService.get_capacity_settings()
+            }
             
         except Exception as e:
             frappe.logger().error(f"Error in get_workload_data: {str(e)}")
-            # Return empty data structure instead of throwing error
-            return {
-                "assignees": [],
-                "tasks": [],
-                "capacity_settings": WorkloadService.get_capacity_settings(department)
-            }
+            return WorkloadService._get_empty_workload_data(department)
 
     @staticmethod
-    def get_capacity_settings(department=None):
+    def _get_empty_workload_data(department=None):
+        """Helper method to return empty workload data structure"""
+        return {
+            "assignees": [],
+            "tasks": [],
+            "capacity_settings": WorkloadService.get_capacity_settings()
+        }
+
+    @staticmethod
+    def get_capacity_settings():
         """Get capacity planning settings"""
         return {
             "default_hours_per_day": 8,
             "default_days_per_week": 5,
-            "overtime_threshold": 1.2,  # 120% capacity
-            "underutilization_threshold": 0.7,  # 70% capacity
+            "overtime_threshold": 1.2,
+            "underutilization_threshold": 0.7,
             "planning_horizon_days": 30
         }
 
     @staticmethod
-    def get_default_holiday_list(company):
-        """Get default holiday list for company"""
-        try:
-            return frappe.get_cached_value("Company", company, "default_holiday_list")
-        except Exception:
-            return None
-
-    @staticmethod
     def get_capacity_analysis(department=None, start_date=None, end_date=None):
         """Get detailed capacity analysis for workload planning"""
-        workload_data = WorkloadService.get_workload_data(department, start_date, end_date)
-        
-        analysis = {
-            "summary": {
-                "total_employees": len(workload_data["assignees"]),
-                "total_tasks": len(workload_data["tasks"]),
-                "scheduled_tasks": len([t for t in workload_data["tasks"] if t["isScheduled"]]),
-                "unscheduled_tasks": len([t for t in workload_data["tasks"] if not t["isScheduled"]])
-            },
-            "capacity_breakdown": [],
-            "overallocated_employees": [],
-            "underutilized_employees": [],
-            "recommendations": []
-        }
-        
-        for assignee in workload_data["assignees"]:
-            assignee_tasks = [t for t in workload_data["tasks"] if t["assignee"] == assignee["id"]]
-            scheduled_hours = sum(t["duration"] for t in assignee_tasks if t["isScheduled"])
+        try:
+            workload_data = WorkloadService.get_workload_data(department, start_date, end_date)
             
-            utilization = (scheduled_hours / assignee["capacity"]) * 100 if assignee["capacity"] > 0 else 0
+            total_employees = len([a for a in workload_data["assignees"] if a["id"] != "unassigned"])
+            scheduled_tasks = [t for t in workload_data["tasks"] if t.get("isScheduled")]
+            unscheduled_tasks = [t for t in workload_data["tasks"] if not t.get("isScheduled")]
             
-            capacity_info = {
-                "employee": assignee["name"],
-                "employee_id": assignee["id"],
-                "capacity": assignee["capacity"],
-                "scheduled_hours": scheduled_hours,
-                "utilization": utilization,
-                "available_hours": max(0, assignee["capacity"] - scheduled_hours),
-                "task_count": len(assignee_tasks)
+            analysis = {
+                "summary": {
+                    "total_employees": total_employees,
+                    "total_tasks": len(workload_data["tasks"]),
+                    "scheduled_tasks": len(scheduled_tasks),
+                    "unscheduled_tasks": len(unscheduled_tasks)
+                },
+                "capacity_breakdown": [],
+                "overallocated_employees": [],
+                "underutilized_employees": [],
+                "recommendations": []
             }
             
-            analysis["capacity_breakdown"].append(capacity_info)
+            # Analyze each assignee
+            for assignee in workload_data["assignees"]:
+                if assignee["id"] == "unassigned":
+                    continue
+                    
+                assignee_tasks = [t for t in scheduled_tasks if t.get("assignee") == assignee["id"]]
+                scheduled_hours = sum(float(t.get("duration", 0)) for t in assignee_tasks)
+                
+                capacity = assignee.get("capacity", 0)
+                utilization = (scheduled_hours / capacity * 100) if capacity > 0 else 0
+                
+                capacity_info = {
+                    "employee": assignee["name"],
+                    "employee_id": assignee["id"],
+                    "capacity": capacity,
+                    "scheduled_hours": scheduled_hours,
+                    "utilization": round(utilization, 1),
+                    "available_hours": max(0, capacity - scheduled_hours),
+                    "task_count": len(assignee_tasks)
+                }
+                
+                analysis["capacity_breakdown"].append(capacity_info)
+                
+                # Categorize employees
+                if utilization > 120:
+                    analysis["overallocated_employees"].append(capacity_info)
+                elif utilization < 70 and utilization > 0:
+                    analysis["underutilized_employees"].append(capacity_info)
             
-            if utilization > 120:
-                analysis["overallocated_employees"].append(capacity_info)
-            elif utilization < 70:
-                analysis["underutilized_employees"].append(capacity_info)
-        
-        # Generate recommendations
-        if analysis["overallocated_employees"]:
-            analysis["recommendations"].append({
-                "type": "overallocation",
-                "message": f"{len(analysis['overallocated_employees'])} employees are overallocated",
-                "action": "Consider redistributing tasks or extending deadlines"
-            })
-        
-        if analysis["unscheduled_tasks"] > 0:
-            analysis["recommendations"].append({
-                "type": "unscheduled",
-                "message": f"{analysis['summary']['unscheduled_tasks']} tasks need scheduling",
-                "action": "Schedule unassigned tasks to available capacity"
-            })
-        
-        return analysis
+            # Generate recommendations
+            if analysis["overallocated_employees"]:
+                analysis["recommendations"].append({
+                    "type": "overallocation",
+                    "message": f"{len(analysis['overallocated_employees'])} employees are overallocated",
+                    "action": "Consider redistributing tasks or extending deadlines"
+                })
+            
+            if analysis["summary"]["unscheduled_tasks"] > 0:
+                analysis["recommendations"].append({
+                    "type": "unscheduled",
+                    "message": f"{analysis['summary']['unscheduled_tasks']} tasks need scheduling",
+                    "action": "Schedule unassigned tasks to available capacity"
+                })
+            
+            return analysis
+            
+        except Exception as e:
+            frappe.logger().error(f"Error in get_capacity_analysis: {str(e)}")
+            return {
+                "summary": {"total_employees": 0, "total_tasks": 0, "scheduled_tasks": 0, "unscheduled_tasks": 0},
+                "capacity_breakdown": [],
+                "overallocated_employees": [],
+                "underutilized_employees": [],
+                "recommendations": []
+            }

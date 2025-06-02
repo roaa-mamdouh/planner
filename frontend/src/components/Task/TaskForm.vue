@@ -10,7 +10,7 @@
 
 
                     <Avatar :shape="'circle'" :label="assignee.owner" :image="assignee.image" size="2xl"
-                        v-for="assignee in docinfo.assignments" :key="assignee.owner" v-if="docinfo" />
+                        v-for="assignee in docinfo.value?.assignments || []" :key="assignee.owner" />
                     <Button :variant="'subtle'" theme="gray" size="lg" label="Button" :loading="false"
                         :loadingText="null" :disabled="false" :link="null" icon="user-plus" class="rounded-full"
                         type="button" @click="addAssigneePopup = true">
@@ -25,7 +25,7 @@
                             <Autocomplete :options="employeesList" v-model="employees" placeholder="Select people"
                                 :multiple="false" class="mb-5" @update:modelValue="onSelectEmployee" />
                             <div class="flex flex-col gap-3">
-                                <div class="flex justify-between items-center" v-for="assignee in docinfo.assignments">
+                                <div class="flex justify-between items-center" v-for="assignee in docinfo.value?.assignments || []">
                                     <div class="flex justify-start items-center gap-3">
                                         <Avatar :shape="'circle'" :image="assignee.image" :label="assignee.owner"
                                             size="2xl" />
@@ -51,13 +51,13 @@
 
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Project</label>
-                    <TextInput :type="'text'" size="sm" variant="subtle" placeholder="" :disabled="true"
+                    <TextInput :type="'text'" size="sm" variant="subtle" placeholder="Project" :disabled="false"
                         v-model="project" />
                     <!--<TextInputAutocomplete v-model="project" placeholder="Project" :options="projectOptions" /> -->
                 </div>
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Elevator</label>
-                    <TextInput :type="'text'" size="sm" variant="subtle" placeholder="" :disabled="true"
+                    <TextInput :type="'text'" size="sm" variant="subtle" placeholder="Elevator" :disabled="false"
                         v-model="elevator" />
                     <!-- <TextInputAutocomplete v-model="elevator" placeholder="Elevator" :options="elevatorOptions" value-by="elevator" label-by="name" />-->
                 </div>
@@ -116,7 +116,7 @@
 
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Expected Time</label>
-                    <TextInput :type="'number'" size="sm" variant="subtle" placeholder="Expected Time" :disabled="true"
+                    <TextInput :type="'number'" size="sm" variant="subtle" placeholder="Expected Time" :disabled="false"
                         v-model="expected_time"
                         :class="[errors.expected_time ? 'border-red-400 hover:border-red-400 hover:bg-grey-200 focus:border-red-500 focus-visible:ring-red-400' : '']" />
                     <ErrorMessage v-if="errors.expected_time" :message="Error(errors.expected_time)" class="mt-1" />
@@ -125,7 +125,7 @@
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Actual Time in Hours</label>
                     <TextInput :type="'number'" size="sm" variant="subtle" placeholder="Actual Time in Hours"
-                        :disabled="true" v-model="actual_time"
+                        :disabled="false" v-model="actual_time"
                         :class="[errors.actual_time ? 'border-red-400 hover:border-red-400 hover:bg-grey-200 focus:border-red-500 focus-visible:ring-red-400' : '']" />
                     <ErrorMessage v-if="errors.actual_time" :message="Error(errors.actual_time)" class="mt-1" />
                 </div>
@@ -136,7 +136,7 @@
 
 <script setup>
 
-import { ref, onMounted, inject, computed, defineProps } from "vue";
+import { ref, onMounted, inject, computed, defineProps, watch } from "vue";
 import { createResource } from "frappe-ui";
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/yup';
@@ -204,11 +204,10 @@ const unselectEmployee = (assignedperson) => {
         auto: true,
         onSuccess: () => {
 
-            for (let index in docinfo.assignments) {
-                const assignee = docinfo.assignments[index];
-                if (assignedperson === assignee.owner) {
-                    // Remove the assignee at this index
-                    docinfo.assignments.splice(index, 1);
+            if (docinfo.value?.assignments) {
+                const index = docinfo.value.assignments.findIndex(a => a.owner === assignedperson);
+                if (index !== -1) {
+                    docinfo.value.assignments.splice(index, 1);
                 }
             }
         }
@@ -231,10 +230,13 @@ const onSelectEmployee = (employee) => {
         },
         auto: true,
         onSuccess: () => {
-            docinfo.assignments.push({
-                owner: employee.value,
-                fullname: employee.label
-            })
+            if (docinfo.value?.assignments) {
+                docinfo.value.assignments.push({
+                    owner: employee.value,
+                    fullname: employee.label,
+                    image: employee.image
+                });
+            }
             selectedEmployees.value.push(employee);
         }
     })
@@ -358,17 +360,25 @@ watchDebounced(
 // 
 
 const addAssigneePopup = ref(false);
-var docinfo = ref();
+const docinfo = ref({
+    assignments: [],
+    user_info: {}
+});
 
 const sortDocinfo = () => {
-    for (var i = 0; i < docinfo.assignments.length; i++) {
-        if (docinfo.user_info[docinfo.assignments[i].owner].image) {
-            docinfo.assignments[i].image = getURL() + docinfo.user_info[docinfo.assignments[i].owner].image
-        }
-
-        // Assign the user readable name always
-        docinfo.assignments[i].fullname = docinfo.user_info[docinfo.assignments[i].owner].fullname
+    if (!docinfo.value?.assignments?.length || !docinfo.value?.user_info) {
+        return;
     }
+
+    docinfo.value.assignments.forEach(assignment => {
+        const userInfo = docinfo.value.user_info[assignment.owner];
+        if (userInfo) {
+            if (userInfo.image) {
+                assignment.image = getURL() + userInfo.image;
+            }
+            assignment.fullname = userInfo.fullname || assignment.owner;
+        }
+    });
 }
 
 const updateValue = (field, value) => {
@@ -415,35 +425,45 @@ const updateValue = (field, value) => {
 }
 
 
-onMounted(() => {
+// Watch docinfo changes
+watch(() => docinfo.value, (newDocinfo) => {
+    if (newDocinfo?.assignments?.length && newDocinfo?.user_info) {
+        newDocinfo.assignments.forEach((assignment, index) => {
+            const userInfo = newDocinfo.user_info[assignment.owner];
+            if (userInfo) {
+                if (userInfo.image) {
+                    docinfo.value.assignments[index].image = getURL() + userInfo.image;
+                }
+                docinfo.value.assignments[index].fullname = userInfo.fullname || assignment.owner;
+            }
+        });
+    }
+}, { deep: true });
 
-    const resp = createResource({
-        url: 'frappe.desk.search.search_link',
+onMounted(async () => {
+    // Load employee list
+    const employeeResource = createResource({
+        url: 'planner.api.get_department_employees',
         params: {
-            doctype: "User",
-            txt: "",
-            filters: {
-                user_type: "System User",
-                enabled: 1
-            }
+            department: props.department
         },
-        auto: true,
         onSuccess: (data) => {
-            var users = []
-            for (var i = 0; i < data.length; i++) {
-                console.log(data[i])
-                var user = {}
-
-                user.value = data[i].value;
-                user.label = data[i].description;
-
-                users.push(user)
-            }
-            employeesList = users;
+            employeesList.value = data.map(emp => ({
+                value: emp.id,
+                label: emp.name,
+                image: emp.image
+            }));
+        },
+        onError: (error) => {
+            console.error('Error loading employees:', error);
+            employeesList.value = [];
         }
     });
 
-    const response = createResource({
+    await employeeResource.submit();
+
+    // Load task details
+    const taskResource = createResource({
         url: 'frappe.desk.form.load.getdoc',
         params: {
             doctype: "Task",
@@ -453,9 +473,9 @@ onMounted(() => {
         onSuccess: (data) => {
 
 
-            if (response.data) {
-                dataTask.value = response.data.docs[0];
-                docinfo = response.data.docinfo;
+            if (taskResource.data) {
+                dataTask.value = taskResource.data.docs[0];
+                docinfo.value = taskResource.data.docinfo;
 
                 subject.value = dataTask.value.subject;
                 project.value = dataTask.value.project;

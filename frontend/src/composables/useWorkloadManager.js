@@ -3,30 +3,25 @@ import { createResource } from 'frappe-ui'
 import { useErrorHandler } from '@/services/errorHandler'
 
 export function useWorkloadManager(initialDepartment) {
+  // Core state
   const department = ref(initialDepartment)
   const assignees = ref([])
   const tasks = ref([])
   const loading = ref(false)
   const error = ref(null)
   const lastUpdate = ref(null)
-  const capacityAnalysis = ref(null)
 
   const { addError } = useErrorHandler()
 
-  // Cache management
-  const CACHE_KEY = computed(() => `workload_data_${department.value || 'default'}`)
+  // Cache configuration
   const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
+  const getCacheKey = (dept) => `workload_data_${dept || 'default'}`
 
-  // Utility function to format date as YYYY-MM-DD
+  // Utility functions
   const formatDateForAPI = (date) => {
     if (!date) return null
-    if (typeof date === 'string') {
-      // If it's already a string in YYYY-MM-DD format, return as is
-      if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-        return date
-      }
-      // Otherwise parse it first
-      date = new Date(date)
+    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return date
     }
     const d = new Date(date)
     return d.getFullYear() + '-' + 
@@ -34,10 +29,15 @@ export function useWorkloadManager(initialDepartment) {
            String(d.getDate()).padStart(2, '0')
   }
 
-  // Watch for department changes
-  watch(() => department.value, (newDepartment, oldDepartment) => {
-    if (newDepartment !== oldDepartment) {
-      console.log("\nDepartment changed in workload manager:", newDepartment)
+  const parseDate = (dateStr) => {
+    if (!dateStr) return null
+    return new Date(dateStr)
+  }
+
+  // Watch department changes
+  watch(() => department.value, (newDept, oldDept) => {
+    if (newDept !== oldDept) {
+      console.log("Department changed:", newDept)
       clearCache()
       loadWorkloadData(null, null, true)
     }
@@ -45,24 +45,17 @@ export function useWorkloadManager(initialDepartment) {
 
   // Computed properties
   const workloadStats = computed(() => {
-    console.log("Computing workload stats...");
+    const totalTasks = tasks.value.length
+    const scheduledTasks = tasks.value.filter(t => t.isScheduled).length
+    const unscheduledTasks = totalTasks - scheduledTasks
+    const overdueTasks = tasks.value.filter(t => t.isOverdue).length
     
-    const totalTasks = tasks.value.length;
-    const scheduledTasks = tasks.value.filter(t => t.isScheduled).length;
-    const unscheduledTasks = tasks.value.filter(t => !t.isScheduled).length;
-    
-    console.log(`Total tasks: ${totalTasks}`);
-    console.log(`Scheduled tasks: ${scheduledTasks}`);
-    console.log(`Unscheduled tasks: ${unscheduledTasks}`);
-    
-    const overdueTasks = tasks.value.filter(t => t.isOverdue).length;
-    
-    const totalCapacity = assignees.value.reduce((sum, a) => sum + a.capacity, 0);
+    const totalCapacity = assignees.value.reduce((sum, a) => sum + (a.capacity || 0), 0)
     const totalScheduledHours = tasks.value
       .filter(t => t.isScheduled)
-      .reduce((sum, t) => sum + (t.duration || 0), 0);
+      .reduce((sum, t) => sum + (t.duration || 0), 0)
     
-    const overallUtilization = totalCapacity > 0 ? (totalScheduledHours / totalCapacity) * 100 : 0;
+    const overallUtilization = totalCapacity > 0 ? (totalScheduledHours / totalCapacity) * 100 : 0
     
     return {
       totalAssignees: assignees.value.length,
@@ -80,302 +73,166 @@ export function useWorkloadManager(initialDepartment) {
   })
 
   const overallocatedAssignees = computed(() => {
-    return assignees.value.filter(assignee => {
-      const assigneeTasks = tasks.value.filter(t => t.assignee === assignee.id && t.isScheduled)
-      const scheduledHours = assigneeTasks.reduce((sum, t) => sum + (t.duration || 0), 0)
-      const utilization = assignee.capacity > 0 ? (scheduledHours / assignee.capacity) * 100 : 0
-      return utilization > 120 // Over 120% capacity
-    })
+    return assignees.value.filter(assignee => (assignee.utilization || 0) > 120)
   })
 
   const underutilizedAssignees = computed(() => {
     return assignees.value.filter(assignee => {
-      const assigneeTasks = tasks.value.filter(t => t.assignee === assignee.id && t.isScheduled)
-      const scheduledHours = assigneeTasks.reduce((sum, t) => sum + (t.duration || 0), 0)
-      const utilization = assignee.capacity > 0 ? (scheduledHours / assignee.capacity) * 100 : 0
-      return utilization < 70 && utilization > 0 // Under 70% but not zero
+      const util = assignee.utilization || 0
+      return util < 70 && util > 0
     })
   })
 
-  // Load workload data
-  const loadWorkloadData = async (startDate = null, endDate = null, forceRefresh = false) => {
-    console.log("\n=== Loading Workload Data ===");
-    console.log("Department:", department.value);
-    console.log("Start Date:", startDate);
-    console.log("End Date:", endDate);
-    console.log("Force Refresh:", forceRefresh);
-
-    if (!forceRefresh) {
-      const cached = loadFromCache();
-      if (cached) {
-        const now = new Date().getTime();
-        const cacheAge = now - cached.timestamp;
-        
-        // Only use cache if it's fresh (less than CACHE_DURATION old)
-        if (cacheAge < CACHE_DURATION) {
-          console.log("Using cached data from:", new Date(cached.timestamp));
-          console.log("Cache age:", Math.round(cacheAge / 1000), "seconds");
-          assignees.value = cached.assignees;
-          tasks.value = cached.tasks;
-          lastUpdate.value = cached.timestamp;
-          return;
-        } else {
-          console.log("Cache expired, fetching fresh data");
-          clearCache();
-        }
-      }
-    }
-
-    loading.value = true;
-    error.value = null;
-
-    try {
-      console.log("Fetching workload data from API...");
-      const resource = createResource({
-        url: 'planner.api.get_workload_data',
-        params: { 
-          department: department.value,
-          start_date: startDate,
-          end_date: endDate
-        },
-        transform(response) {
-          try {
-            // Handle successful response
-            if (response.data) {
-              return response.data;
-            }
-            // Handle error response
-            if (response.error || response._server_messages) {
-              let errorMessage = response._error_message || response.message || 'Failed to load workload data';
-              let errorData = response.data || null;
-              
-              // Try to parse server messages if available
-              if (response._server_messages) {
-                try {
-                  const messages = JSON.parse(response._server_messages);
-                  if (messages && messages.length > 0) {
-                    errorMessage = messages[0].message || errorMessage;
-                  }
-                } catch (e) {
-                  console.error('Error parsing server messages:', e);
-                }
-              }
-
-              const transformedError = {
-                message: errorMessage,
-                exception: response.error || response.exception || 'Unknown error',
-                exc_type: response.exc_type || 'ServerError',
-                data: errorData
-              };
-              throw transformedError;
-            }
-            return response;
-          } catch (e) {
-            // If error occurs during transformation, ensure it has exc_type
-            if (!e.exc_type) {
-              e.exc_type = 'TransformError';
-            }
-            throw e;
-          }
-        },
-        onSuccess: (data) => {
-          console.log("API Response received");
-          console.log("Raw API data:", JSON.stringify(data));
-          console.log("Assignees:", data.assignees?.length || 0);
-          console.log("Tasks:", data.tasks?.length || 0);
-          
-          if (!data.tasks || data.tasks.length === 0) {
-            console.log("WARNING: No tasks received from API");
-          }
-          
-          if (!data.assignees || data.assignees.length === 0) {
-            console.log("WARNING: No assignees received from API");
-          }
-          
-          // Process data in correct order
-          tasks.value = processTaskData(data.tasks || []);
-          assignees.value = processAssigneeData(data.assignees || []);
-          
-          // Extra validation
-          console.log("Processed tasks count:", tasks.value.length);
-          console.log("Unscheduled tasks:", tasks.value.filter(t => !t.isScheduled).length);
-          
-          lastUpdate.value = new Date();
-          saveToCache();
-          
-          console.log("Data processing completed");
-        },
-        onError: (err) => {
-          error.value = err;
-          console.error('Error loading workload data:', err);
-          
-          // Set empty data to prevent UI errors
-          tasks.value = [];
-          assignees.value = [];
-          
-          try {
-            // Handle Frappe error response format
-            const errorData = err.response?.data || err;
-            let errorMessage = errorData._error_message || errorData.message || 'Failed to load workload data';
-            
-            // Try to parse server messages if available
-            if (errorData._server_messages) {
-              try {
-                const messages = JSON.parse(errorData._server_messages);
-                if (messages && messages.length > 0) {
-                  errorMessage = messages[0].message || errorMessage;
-                }
-              } catch (e) {
-                console.error('Error parsing server messages:', e);
-              }
-            }
-            
-            // Transform error to match Frappe UI's expected format
-            const transformedError = {
-              message: errorMessage,
-              exception: errorData.error || errorData.exception || 'Unknown error',
-              exc_type: errorData.exc_type || err.exc_type || 'ServerError', // Check both errorData and err
-              data: errorData.data || null
-            };
-            
-            // Add error to error handler service
-            addError({
-              title: 'Workload Data Error',
-              message: transformedError.message,
-              type: 'error',
-              details: transformedError
-            });
-
-            // Use the fallback data from the API response if available
-            if (transformedError.data) {
-              console.log('Using fallback data from error response');
-              if (transformedError.data.assignees) {
-                assignees.value = processAssigneeData(transformedError.data.assignees);
-              }
-              if (transformedError.data.tasks) {
-                tasks.value = processTaskData(transformedError.data.tasks);
-              }
-            }
-
-            // Update error value with transformed error
-            error.value = transformedError;
-          } catch (e) {
-            // Ensure we always have a properly formatted error
-            console.error('Error in error handler:', e);
-            error.value = {
-              message: 'An unexpected error occurred',
-              exception: e.message || 'Unknown error',
-              exc_type: 'ClientError',
-              data: null
-            };
-          }
-        }
-      });
-
-      await resource.submit();
-    } finally {
-      loading.value = false
-    }
-  };
-
-
-  // Process assignee data
-  const processAssigneeData = (data) => {
-    return data.map(assignee => {
-      const processed = {
-        ...assignee,
-        id: assignee.id || assignee.employee_id,
-        name: assignee.name || "Unknown",
-        capacity: parseFloat(assignee.capacity || 0)
-      }
-
-      // Calculate utilization after tasks are processed
-      const assigneeTasks = tasks.value.filter(t => t.assignee === processed.id && t.isScheduled)
-      const scheduledHours = assigneeTasks.reduce((sum, t) => sum + (t.duration || 0), 0)
-      processed.utilization = processed.capacity > 0 
-        ? Math.round((scheduledHours / processed.capacity) * 100)
+  // Data processing functions
+const processTaskData = (rawTasks) => {
+  if (!Array.isArray(rawTasks)) {
+    console.error("Invalid tasks data received:", rawTasks)
+    return []
+  }
+  return rawTasks.map(task => {
+      const startDate = parseDate(task.startDate || task.exp_start_date)
+      const endDate = parseDate(task.endDate || task.exp_end_date)
+      
+      // Calculate duration in days
+      const durationDays = startDate && endDate 
+        ? Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1 
         : 0
 
+      // Handle assignee from _assign field
+      let assignee = task.assignee || 'unassigned'
+      if (task._assign) {
+        try {
+          const assignees = typeof task._assign === 'string' ? 
+            JSON.parse(task._assign) : task._assign
+          
+          if (Array.isArray(assignees) && assignees.length > 0) {
+            assignee = assignees[0]
+          }
+        } catch (e) {
+          console.error(`Error parsing _assign for task ${task.name}:`, e)
+        }
+      }
+
+      // Check if task is overdue
+      const now = new Date()
+      const isOverdue = endDate && endDate < now && task.status !== 'Completed'
+
+      return {
+        id: task.id || task.name,
+        name: task.name,
+        title: task.title || task.subject || "Untitled Task",
+        startDate,
+        endDate,
+        assignee: assignee || 'unassigned',
+        duration: parseFloat(task.duration || task.expected_time || 0),
+        durationDays,
+        isScheduled: !!(startDate && endDate),
+        isOverdue,
+        project: task.project || "",
+        status: task.status || "Open",
+        priority: task.priority || "Medium",
+        color: task.color || "#6B7280",
+        description: task.description || ""
+      }
+    })
+  }
+
+const processAssigneeData = (rawAssignees) => {
+  if (!Array.isArray(rawAssignees)) {
+    console.error("Invalid assignees data received:", rawAssignees)
+    return []
+  }
+  return rawAssignees.map(assignee => {
+      const processed = {
+        id: assignee.id || assignee.employee_id,
+        employee_id: assignee.employee_id,
+        name: assignee.name || "Unknown",
+        email: assignee.email || "",
+        image: assignee.image,
+        role: assignee.role || "Employee",
+        department: assignee.department,
+        company: assignee.company,
+        capacity: parseFloat(assignee.capacity || 0),
+        total_capacity: parseFloat(assignee.total_capacity || assignee.capacity || 0),
+        working_hours: assignee.working_hours || {
+          hours_per_day: 8,
+          days_per_week: 5,
+          start_time: "09:00",
+          end_time: "17:00"
+        },
+        availability: parseFloat(assignee.availability || 0)
+      }
+
+      // Calculate utilization
+      processed.utilization = calculateUtilization(processed.id)
+      
       return processed
     })
   }
 
-  // Process task data
-  const processTaskData = (data) => {
-    console.log("Processing task data:", data);
-    return data.map(task => {
-      // Ensure dates are properly converted to Date objects
-      const startDate = (task.startDate || task.exp_start_date) ? 
-        new Date(task.startDate || task.exp_start_date) : null;
-      const endDate = (task.endDate || task.exp_end_date) ? 
-        new Date(task.endDate || task.exp_end_date) : null;
-      
-      // Calculate duration in days for timeline display
-      const durationDays = startDate && endDate 
-        ? Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1 
-        : 0;
-      
-      // Process assignee data - ensure it's always valid even if empty
-      // Convert empty string or empty array to 'unassigned'
-      let assignee = task.assignee || null;
-      if (task._assign) {
-        try {
-          // _assign could be a JSON string of an array
-          const assignees = typeof task._assign === 'string' ? 
-            JSON.parse(task._assign) : task._assign;
-          
-          if (Array.isArray(assignees) && assignees.length > 0) {
-            assignee = assignees[0];
-          }
-        } catch (e) {
-          console.error(`Error parsing _assign for task ${task.name}:`, e);
-        }
+  // Main data loading function
+  const loadWorkloadData = async (startDate = null, endDate = null, forceRefresh = false) => {
+    console.log("Loading workload data for department:", department.value)
+
+    // Check cache first
+    if (!forceRefresh) {
+      const cached = loadFromCache()
+      if (cached) {
+        console.log("Using cached data")
+        assignees.value = cached.assignees
+        tasks.value = cached.tasks
+        lastUpdate.value = cached.timestamp
+        return
       }
-      
-      // Debug
-      console.log(`Task ${task.id || task.name}: startDate=${startDate}, endDate=${endDate}, assignee=${assignee}`);
+    }
 
-      const processed = {
-        ...task,
-        id: task.id || task.name,
-        title: task.title || task.subject || "Untitled Task",
-        startDate,
-        endDate,
-        assignee: assignee || 'unassigned',  // Ensure assignee is never null/undefined
-        duration: parseFloat(task.duration || task.expected_time || 0),
-        durationDays,
-        isScheduled: !!(startDate && endDate),
-        project: task.project || "",
-        status: task.status || "Open",
-        priority: task.priority || "Medium",
-        color: task.color || "#6B7280"
-      };
-      
-      console.log(`Processed task ${processed.id}: isScheduled=${processed.isScheduled}`);
-      return processed;
-    });
+    loading.value = true
+    error.value = null
+
+    try {
+      const resource = createResource({
+        url: 'planner.api.get_workload_data',
+        params: { 
+          department: department.value,
+          start_date: formatDateForAPI(startDate),
+          end_date: formatDateForAPI(endDate)
+        },
+        onSuccess: (data) => {
+          console.log("API Response received:", data)
+          
+          // Process data
+          tasks.value = processTaskData(data.tasks || [])
+          assignees.value = processAssigneeData(data.assignees || [])
+          
+          lastUpdate.value = new Date()
+          saveToCache()
+          
+          console.log(`Processed ${tasks.value.length} tasks and ${assignees.value.length} assignees`)
+        },
+        onError: (err) => {
+          console.error('Error loading workload data:', err)
+          error.value = err
+          
+          // Set empty data
+          tasks.value = []
+          assignees.value = []
+          
+          // Add error to error handler
+          addError({
+            title: 'Workload Data Error',
+            message: err.message || 'Failed to load workload data',
+            type: 'error'
+          })
+        }
+      })
+
+      await resource.submit()
+    } finally {
+      loading.value = false
+    }
   }
 
-  // Calculate utilization for an assignee
-  const calculateUtilization = (assigneeId) => {
-    const assignee = assignees.value.find(a => a.id === assigneeId)
-    if (!assignee || assignee.capacity === 0) return 0
-
-    const assigneeTasks = tasks.value.filter(t => t.assignee === assigneeId && t.isScheduled)
-    const scheduledHours = assigneeTasks.reduce((sum, t) => {
-      // If task has duration, use it directly
-      if (t.duration) return sum + t.duration
-      
-      // Otherwise calculate based on duration days
-      if (t.durationDays) return sum + (t.durationDays * 8) // Assume 8 hours per day
-      
-      return sum
-    }, 0)
-    
-    return Math.round((scheduledHours / assignee.capacity) * 100)
-  }
-
-  // Move task to different assignee or schedule
+  // Task operations
   const moveTask = async (taskId, assigneeId, startDate = null, endDate = null) => {
     loading.value = true
     error.value = null
@@ -389,21 +246,24 @@ export function useWorkloadManager(initialDepartment) {
           start_date: formatDateForAPI(startDate),
           end_date: formatDateForAPI(endDate)
         },
-        onSuccess: (data) => {
+        onSuccess: () => {
           // Update local task data
           const taskIndex = tasks.value.findIndex(t => t.id === taskId)
           if (taskIndex !== -1) {
             tasks.value[taskIndex] = {
               ...tasks.value[taskIndex],
               assignee: assigneeId,
-              startDate: startDate ? new Date(startDate) : null,
-              endDate: endDate ? new Date(endDate) : null,
+              startDate: parseDate(startDate),
+              endDate: parseDate(endDate),
               isScheduled: !!(startDate && endDate)
             }
           }
           
-          // Update assignee utilizations
-          assignees.value = processAssigneeData(assignees.value)
+          // Recalculate utilizations
+          assignees.value = assignees.value.map(a => ({
+            ...a,
+            utilization: calculateUtilization(a.id)
+          }))
           
           saveToCache()
         },
@@ -414,19 +274,16 @@ export function useWorkloadManager(initialDepartment) {
       })
 
       await resource.submit()
-      return resource.data
     } finally {
       loading.value = false
     }
   }
 
-  // Update task details
   const updateTask = async (taskId, updates) => {
     loading.value = true
     error.value = null
 
     try {
-      // Format date fields if they exist in updates
       const formattedUpdates = { ...updates }
       if (formattedUpdates.exp_start_date) {
         formattedUpdates.exp_start_date = formatDateForAPI(formattedUpdates.exp_start_date)
@@ -441,7 +298,7 @@ export function useWorkloadManager(initialDepartment) {
           task_id: taskId,
           updates: formattedUpdates
         },
-        onSuccess: (data) => {
+        onSuccess: () => {
           const taskIndex = tasks.value.findIndex(t => t.id === taskId)
           if (taskIndex !== -1) {
             tasks.value[taskIndex] = {
@@ -450,9 +307,12 @@ export function useWorkloadManager(initialDepartment) {
             }
           }
           
-          // Update assignee utilizations if task duration changed
+          // Recalculate utilizations if needed
           if (updates.duration !== undefined || updates.startDate !== undefined || updates.endDate !== undefined) {
-            assignees.value = processAssigneeData(assignees.value)
+            assignees.value = assignees.value.map(a => ({
+              ...a,
+              utilization: calculateUtilization(a.id)
+            }))
           }
           
           saveToCache()
@@ -469,144 +329,29 @@ export function useWorkloadManager(initialDepartment) {
     }
   }
 
-  // Get capacity analysis
-  const getCapacityAnalysis = async (startDate = null, endDate = null) => {
-    loading.value = true
-    error.value = null
-
-    try {
-      const resource = createResource({
-        url: 'planner.api.get_capacity_analysis',
-        params: {
-          department: department.value,
-          start_date: startDate,
-          end_date: endDate
-        },
-        onSuccess: (data) => {
-          capacityAnalysis.value = data
-        },
-        onError: (err) => {
-          error.value = err
-          console.error('Error getting capacity analysis:', err)
-        }
-      })
-
-      await resource.submit()
-      return resource.data
-    } finally {
-      loading.value = false
-    }
-  }
-
-  // Filter functions
-  const filterTasks = (filters) => {
-    return tasks.value.filter(task => {
-      let matches = true
-
-      if (filters.status && filters.status.length > 0) {
-        matches = matches && filters.status.includes(task.status)
-      }
-
-      if (filters.priority && filters.priority.length > 0) {
-        matches = matches && filters.priority.includes(task.priority)
-      }
-
-      if (filters.assignee) {
-        matches = matches && task.assignee === filters.assignee
-      }
-
-      if (filters.project) {
-        matches = matches && task.project?.toLowerCase().includes(filters.project.toLowerCase())
-      }
-
-      if (filters.scheduled !== undefined) {
-        matches = matches && task.isScheduled === filters.scheduled
-      }
-
-      if (filters.dateRange) {
-        const { start, end } = filters.dateRange
-        if (task.startDate && task.endDate) {
-          matches = matches && (
-            (task.startDate >= start && task.startDate <= end) ||
-            (task.endDate >= start && task.endDate <= end) ||
-            (task.startDate <= start && task.endDate >= end)
-          )
-        }
-      }
-
-      return matches
-    })
-  }
-
-  const filterAssignees = (filters) => {
-    return assignees.value.filter(assignee => {
-      let matches = true
-
-      if (filters.department) {
-        matches = matches && assignee.department === filters.department
-      }
-
-      if (filters.role) {
-        matches = matches && assignee.role?.toLowerCase().includes(filters.role.toLowerCase())
-      }
-
-      if (filters.utilizationRange) {
-        const utilization = calculateUtilization(assignee.id)
-        matches = matches && (
-          utilization >= filters.utilizationRange.min &&
-          utilization <= filters.utilizationRange.max
-        )
-      }
-
-      return matches
-    })
-  }
-
-  // Cache management
-  const saveToCache = () => {
-    const cacheData = {
-      assignees: assignees.value,
-      tasks: tasks.value,
-      timestamp: new Date().getTime()
-    }
-    localStorage.setItem(CACHE_KEY.value, JSON.stringify(cacheData))
-  }
-
-  const loadFromCache = () => {
-    const cached = localStorage.getItem(CACHE_KEY.value)
-    if (!cached) return null
-
-    const { assignees: cachedAssignees, tasks: cachedTasks, timestamp } = JSON.parse(cached)
-    const now = new Date().getTime()
-
-    if (now - timestamp > CACHE_DURATION) {
-      localStorage.removeItem(CACHE_KEY.value)
-      return null
-    }
-
-    return { 
-      assignees: cachedAssignees, 
-      tasks: cachedTasks, 
-      timestamp 
-    }
-  }
-
-  const clearCache = () => {
-    localStorage.removeItem(CACHE_KEY.value)
-  }
-
   // Utility functions
+  const calculateUtilization = (assigneeId) => {
+    const assignee = assignees.value.find(a => a.id === assigneeId)
+    if (!assignee || assignee.capacity === 0) return 0
+
+    const assigneeTasks = tasks.value.filter(t => t.assignee === assigneeId && t.isScheduled)
+    const scheduledHours = assigneeTasks.reduce((sum, t) => sum + (t.duration || 0), 0)
+    
+    return Math.round((scheduledHours / assignee.capacity) * 100)
+  }
+
   const getTasksForAssignee = (assigneeId, filters = {}) => {
-    const assigneeTasks = tasks.value.filter(t => t.assignee === assigneeId)
-    return filters ? filterTasks({ ...filters, assignee: assigneeId }) : assigneeTasks
-  }
-
-  const getUnscheduledTasksForAssignee = (assigneeId) => {
-    return tasks.value.filter(t => t.assignee === assigneeId && !t.isScheduled)
-  }
-
-  const getScheduledTasksForAssignee = (assigneeId) => {
-    return tasks.value.filter(t => t.assignee === assigneeId && t.isScheduled)
+    let assigneeTasks = tasks.value.filter(t => t.assignee === assigneeId)
+    
+    if (filters.scheduled !== undefined) {
+      assigneeTasks = assigneeTasks.filter(t => t.isScheduled === filters.scheduled)
+    }
+    
+    if (filters.status) {
+      assigneeTasks = assigneeTasks.filter(t => filters.status.includes(t.status))
+    }
+    
+    return assigneeTasks
   }
 
   const getTasksInDateRange = (startDate, endDate) => {
@@ -621,44 +366,71 @@ export function useWorkloadManager(initialDepartment) {
     })
   }
 
-  // Auto-scheduling suggestions
-  const getSuggestedScheduling = (taskId) => {
-    const task = tasks.value.find(t => t.id === taskId)
-    if (!task || !task.duration) return []
-
-    const suggestions = []
-    
-    // Find assignees with available capacity
-    const availableAssignees = assignees.value.filter(assignee => {
-      const utilization = calculateUtilization(assignee.id)
-      return utilization < 100 // Has available capacity
-    })
-
-    availableAssignees.forEach(assignee => {
-      const availableHours = assignee.capacity - getScheduledTasksForAssignee(assignee.id)
-        .reduce((sum, t) => sum + (t.duration || 0), 0)
-      
-      if (availableHours >= task.duration) {
-        suggestions.push({
-          assigneeId: assignee.id,
-          assigneeName: assignee.name,
-          availableHours,
-          utilization: calculateUtilization(assignee.id),
-          suggestedStartDate: new Date(), // Could be more sophisticated
-          confidence: Math.max(0, 100 - calculateUtilization(assignee.id))
-        })
-      }
-    })
-
-    // Sort by confidence/availability
-    return suggestions.sort((a, b) => b.confidence - a.confidence)
+  // Cache management
+  const saveToCache = () => {
+    const cacheData = {
+      assignees: assignees.value,
+      tasks: tasks.value,
+      timestamp: new Date().getTime()
+    }
+    try {
+      localStorage.setItem(getCacheKey(department.value), JSON.stringify(cacheData))
+    } catch (e) {
+      console.warn('Failed to save to cache:', e)
+    }
   }
 
-  // Initialize data loading with force refresh to ensure fresh data
-  nextTick(() => {
-    console.log("Initial data loading for department:", department.value)
-    loadWorkloadData(null, null, true)
-  })
+  const loadFromCache = () => {
+    try {
+      const cached = localStorage.getItem(getCacheKey(department.value))
+      if (!cached) return null
+
+      const { assignees: cachedAssignees, tasks: cachedTasks, timestamp } = JSON.parse(cached)
+      const now = new Date().getTime()
+
+      if (now - timestamp > CACHE_DURATION) {
+        clearCache()
+        return null
+      }
+
+      return { 
+        assignees: cachedAssignees, 
+        tasks: cachedTasks, 
+        timestamp 
+      }
+    } catch (e) {
+      console.warn('Failed to load from cache:', e)
+      return null
+    }
+  }
+
+  const clearCache = () => {
+    try {
+      localStorage.removeItem(getCacheKey(department.value))
+    } catch (e) {
+      console.warn('Failed to clear cache:', e)
+    }
+  }
+
+  // Initialize data loading
+  const init = async () => {
+    console.log("Initializing workload manager for department:", department.value)
+    if (department.value) {
+      await loadWorkloadData(null, null, true)
+    }
+  }
+
+  // Call init on creation
+  init()
+
+  // Watch department changes
+  watch(department, (newDept, oldDept) => {
+    if (newDept && newDept !== oldDept) {
+      console.log("Department changed, reloading data:", newDept)
+      clearCache()
+      loadWorkloadData(null, null, true)
+    }
+  }, { immediate: true })
 
   return {
     // State
@@ -668,7 +440,6 @@ export function useWorkloadManager(initialDepartment) {
     loading,
     error,
     lastUpdate,
-    capacityAnalysis,
     
     // Computed
     workloadStats,
@@ -679,17 +450,11 @@ export function useWorkloadManager(initialDepartment) {
     loadWorkloadData,
     moveTask,
     updateTask,
-    getCapacityAnalysis,
-    filterTasks,
-    filterAssignees,
     clearCache,
     
     // Utility methods
     getTasksForAssignee,
-    getUnscheduledTasksForAssignee,
-    getScheduledTasksForAssignee,
     getTasksInDateRange,
-    getSuggestedScheduling,
     calculateUtilization,
     formatDateForAPI
   }
