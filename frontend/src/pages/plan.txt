@@ -1,0 +1,164 @@
+# Atlas Task Management System - Project Plan
+
+## Executive Summary
+
+The Atlas Task Management System is a comprehensive ERPNext-based solution designed to replace the standard Task doctype with a custom `atlas_task` doctype, providing enhanced project management capabilities with advanced workload visualization, resource allocation, and team collaboration features.
+project management app to manage tasks, projects, and resources
+
+The system will be integrated with erpnext, build with frappe ui, vue 3 and tailwindcss 
+watch frappe school videos to understand
+
+
+for more info contact: roaa@axentor.co
+
+## Project Scope
+## Project Architecture
+
+
+### Database Design
+
+#### Core Atlas Task Schema
+```sql
+atlas_task
+├── Basic Information
+│   ├── name (Primary Key)
+│   ├── title
+│   ├── description
+│   ├── priority (High/Medium/Low)
+│   └── status (Open/In Progress/Review/Pending Mina/Completed/Cancelled)
+├── Assignment & Ownership
+│   ├── assigned_to (Link to Employee)
+│   ├── assigned_by (Link to Employee)
+│   ├── project (Link to Project)
+│   └── department (Link to Department)
+├── Timeline Management
+│   ├── expected_start_date
+│   ├── expected_end_date
+│   ├── actual_start_date
+│   ├── actual_end_date
+│   └── estimated_hours
+├── Progress Tracking
+│   ├── progress_percentage
+│   ├── actual_hours
+│   ├── remaining_hours
+│   └── completion_date
+└── Additional Features
+    ├── tags (Table MultiSelect)
+    ├── dependencies (Table - Link to other Atlas Tasks)
+    ├── attachments (Attach)
+    └── custom_fields (Extensible)
+```
+
+
+
+Phase-by-Phase Development Plan
+
+Phase 1: Foundation & Core Setup (Week 1)
+    Week 1: Environment Setup & Analysis, Task DocType Development
+    
+    
+        Deliverables:
+            Requirements gathering and documentation
+            Team Input Collection: Conduct ClickUp feature audit with current users (must-have vs nice-to-have)
+            
+        Core doctype creation:
+            Field definitions and validations (matching ClickUp data structure)
+            Basic form layout design with modern UI components
+            List view configuration with filtering and sorting capabilities
+
+        Success Criteria:
+            Atlas Task doctype created with all essential fields
+            Basic CRUD operations functional
+            Development environment fully operational
+
+
+Phase 2: Workload Visualization Module (Weeks 2-3)
+    Status: In Progress (80% Complete)
+
+    Week 2: Dashboard Foundation & Core Visualization
+        Deliverables:
+            Complete current workload view implementation
+            Bug fixes and performance optimization for existing 80% complete module
+            User testing and feedback integration (Mina's Feedback)
+
+        Success Criteria:
+            Workload visualization fully functional and tested
+            Real-time updates working across multiple users
+
+        Week 3: Mobile Responsiveness & Integration
+        Deliverables:
+
+            Day 1-3: Mobile interface optimization
+
+            Responsive design for dashboard and workload views
+            Push notifications for task updates and mentions
+
+
+    Day 4-5: ERPNext Module Integration
+
+        Timesheet integration (automatic time tracking from tasks)
+        Employee management sync (user profiles, availability, skills)
+        Project module deep integration (task rollup to project progress)
+
+
+
+
+Phase 3: Advanced Features & ClickUp Parity (Weeks 4-5)
+    Week 4: Workflow Engine & Collaboration
+    Deliverables:
+
+        Day 1-3: Custom workflow development
+
+            State transition logic (Open → In Progress → Review → Pending Mina → Completed)
+            Automated notifications (assignment, due dates, mentions)
+
+
+        Day 4-5: Collaboration Features #need to be reviewed
+            Comments system with rich text and file attachments
+            @mentions functionality with notifications
+            Task watchers system (subscribe to task updates)
+            Activity timeline (audit trail of all task changes)
+
+
+
+    Week 5: Reporting & Analytics Dashboard
+        Deliverables:
+
+            Day 1-3: Custom reports development
+                Task completion reports (team and individual performance)
+                Team productivity analytics (velocity, burndown charts)
+
+            Day 4-5: Dashboard widgets & KPIs
+                Real-time metrics dashboard (tasks completed, overdue, in progress)
+                Customizable dashboard layouts (user-specific views)
+                Executive summary widgets (high-level project health)
+                Task list widgets (filtered views of tasks by status, assignee, etc.)
+                User profile widgets (team member performance, availability, skills)
+                Project summary widgets (project progress, timeline, budget)   
+                Customizable KPIs (key performance indicators)
+                Customizable dashboard layouts (user-specific views)
+                Real-time metrics dashboard (tasks completed, overdue, in progress)
+
+
+
+Phase 4: API Development & Raven Integration (Week 6)
+
+
+Phase 5: Testing
+    Week 6: Comprehensive Testing 
+        Deliverables:
+
+            Day 1-2: Automated testing suite
+
+                Unit testing (server-side logic, frontend components)
+                Integration testing (cross-module functionality)
+                API endpoint testing (performance and reliability)
+                Load testing (concurrent user scenarios)
+
+
+            Day 3-5: User Acceptance Testing
+
+                Stakeholder testing sessions with ClickUp power users
+                Feature validation against ClickUp functionality checklist
+                Performance benchmarking vs ClickUp response times
+                Security testing and vulnerability assessment

@@ -1,35 +1,35 @@
 import frappe
 
-def emit_task_update(task, event_type="task_update"):
-    """Emit task update event to all connected clients"""
-    task_data = {
-        "name": task.name,
-        "subject": task.subject,
-        "status": task.status,
-        "priority": task.priority,
-        "project": task.project,
-        "assigned_to": task.assigned_to,
-        "exp_start_date": str(task.exp_start_date),
-        "exp_end_date": str(task.exp_end_date),
-        "expected_time": task.expected_time,
-        "department": task.department
-    }
-    
-    frappe.publish_realtime(event_type, task_data, user=None)
+def emit_task_update(task):
+    """Emit real-time update for task changes"""
+    try:
+        frappe.publish_realtime(
+            'task_update',
+            {
+                'task_id': task.name,
+                'status': task.status,
+                'assignee': task._assign,
+                'modified': str(task.modified)
+            },
+            user=frappe.session.user
+        )
+    except Exception as e:
+        frappe.logger().error(f"Error emitting task update: {str(e)}")
 
-def emit_batch_update(tasks, event_type="batch_task_update"):
-    """Emit batch task update event to all connected clients"""
-    task_data = [{
-        "name": task.name,
-        "subject": task.subject,
-        "status": task.status,
-        "priority": task.priority,
-        "project": task.project,
-        "assigned_to": task.assigned_to,
-        "exp_start_date": str(task.exp_start_date),
-        "exp_end_date": str(task.exp_end_date),
-        "expected_time": task.expected_time,
-        "department": task.department
-    } for task in tasks]
-    
-    frappe.publish_realtime(event_type, task_data, user=None)
+def emit_batch_update(tasks):
+    """Emit real-time update for batch task changes"""
+    try:
+        updates = [{
+            'task_id': task.name,
+            'status': task.status,
+            'assignee': task._assign,
+            'modified': str(task.modified)
+        } for task in tasks]
+        
+        frappe.publish_realtime(
+            'batch_task_update',
+            {'updates': updates},
+            user=frappe.session.user
+        )
+    except Exception as e:
+        frappe.logger().error(f"Error emitting batch update: {str(e)}")

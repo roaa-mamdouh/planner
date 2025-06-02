@@ -1,5 +1,6 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { createResource } from 'frappe-ui'
+import { useErrorHandler } from '@/services/errorHandler'
 
 export function useWorkloadManager(initialDepartment) {
   const department = ref(initialDepartment)
@@ -9,6 +10,8 @@ export function useWorkloadManager(initialDepartment) {
   const error = ref(null)
   const lastUpdate = ref(null)
   const capacityAnalysis = ref(null)
+
+  const { addError } = useErrorHandler()
 
   // Cache management
   const CACHE_KEY = computed(() => `workload_data_${department.value || 'default'}`)
@@ -135,6 +138,46 @@ export function useWorkloadManager(initialDepartment) {
           start_date: startDate,
           end_date: endDate
         },
+        transform(response) {
+          try {
+            // Handle successful response
+            if (response.data) {
+              return response.data;
+            }
+            // Handle error response
+            if (response.error || response._server_messages) {
+              let errorMessage = response._error_message || response.message || 'Failed to load workload data';
+              let errorData = response.data || null;
+              
+              // Try to parse server messages if available
+              if (response._server_messages) {
+                try {
+                  const messages = JSON.parse(response._server_messages);
+                  if (messages && messages.length > 0) {
+                    errorMessage = messages[0].message || errorMessage;
+                  }
+                } catch (e) {
+                  console.error('Error parsing server messages:', e);
+                }
+              }
+
+              const transformedError = {
+                message: errorMessage,
+                exception: response.error || response.exception || 'Unknown error',
+                exc_type: response.exc_type || 'ServerError',
+                data: errorData
+              };
+              throw transformedError;
+            }
+            return response;
+          } catch (e) {
+            // If error occurs during transformation, ensure it has exc_type
+            if (!e.exc_type) {
+              e.exc_type = 'TransformError';
+            }
+            throw e;
+          }
+        },
         onSuccess: (data) => {
           console.log("API Response received");
           console.log("Raw API data:", JSON.stringify(data));
@@ -165,15 +208,76 @@ export function useWorkloadManager(initialDepartment) {
         onError: (err) => {
           error.value = err;
           console.error('Error loading workload data:', err);
-          console.error('Error details:', err.message);
+          
+          // Set empty data to prevent UI errors
+          tasks.value = [];
+          assignees.value = [];
+          
+          try {
+            // Handle Frappe error response format
+            const errorData = err.response?.data || err;
+            let errorMessage = errorData._error_message || errorData.message || 'Failed to load workload data';
+            
+            // Try to parse server messages if available
+            if (errorData._server_messages) {
+              try {
+                const messages = JSON.parse(errorData._server_messages);
+                if (messages && messages.length > 0) {
+                  errorMessage = messages[0].message || errorMessage;
+                }
+              } catch (e) {
+                console.error('Error parsing server messages:', e);
+              }
+            }
+            
+            // Transform error to match Frappe UI's expected format
+            const transformedError = {
+              message: errorMessage,
+              exception: errorData.error || errorData.exception || 'Unknown error',
+              exc_type: errorData.exc_type || err.exc_type || 'ServerError', // Check both errorData and err
+              data: errorData.data || null
+            };
+            
+            // Add error to error handler service
+            addError({
+              title: 'Workload Data Error',
+              message: transformedError.message,
+              type: 'error',
+              details: transformedError
+            });
+
+            // Use the fallback data from the API response if available
+            if (transformedError.data) {
+              console.log('Using fallback data from error response');
+              if (transformedError.data.assignees) {
+                assignees.value = processAssigneeData(transformedError.data.assignees);
+              }
+              if (transformedError.data.tasks) {
+                tasks.value = processTaskData(transformedError.data.tasks);
+              }
+            }
+
+            // Update error value with transformed error
+            error.value = transformedError;
+          } catch (e) {
+            // Ensure we always have a properly formatted error
+            console.error('Error in error handler:', e);
+            error.value = {
+              message: 'An unexpected error occurred',
+              exception: e.message || 'Unknown error',
+              exc_type: 'ClientError',
+              data: null
+            };
+          }
         }
       });
 
       await resource.submit();
     } finally {
-      loading.value = false;
+      loading.value = false
     }
   };
+
 
   // Process assignee data
   const processAssigneeData = (data) => {
