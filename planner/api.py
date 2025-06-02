@@ -630,3 +630,52 @@ def get_primary_assignee(task):
         frappe.logger().error(f"Error getting primary assignee for task {task.name}: {str(e)}")
     
     return "Unassigned"
+
+@frappe.whitelist()
+def move_task(task_id, assignee_id=None, start_date=None, end_date=None):
+    """Move task to different assignee or schedule"""
+    try:
+        if not task_id:
+            frappe.throw(_("Task ID is required"))
+        
+        task = frappe.get_doc("Task", task_id)
+        
+        # Update assignment
+        if assignee_id:
+            if assignee_id == "unassigned":
+                task._assign = None
+            else:
+                # Get employee record to validate
+                employee = frappe.get_value("Employee", {"user_id": assignee_id}, "name")
+                if employee:
+                    task._assign = frappe.as_json([assignee_id])
+                else:
+                    frappe.throw(_("Invalid assignee"))
+        
+        # Update schedule
+        if start_date:
+            task.exp_start_date = getdate(start_date)
+        if end_date:
+            task.exp_end_date = getdate(end_date)
+        
+        try:
+            task.save(ignore_version=True)
+            frappe.db.commit()
+        except frappe.TimestampMismatchError:
+            # If timestamp mismatch, reload and retry
+            task.reload()
+            task.save(ignore_version=True)
+            frappe.db.commit()
+        
+        # Emit real-time update
+        emit_task_update(task)
+        
+        return {
+            "success": True,
+            "task": TaskService.format_task(task),
+            "message": "Task moved successfully"
+        }
+        
+    except Exception as e:
+        frappe.logger().error(f"Error moving task: {str(e)}")
+        return handle_api_error(e, "Move Task Error")
