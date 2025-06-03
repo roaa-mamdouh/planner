@@ -469,10 +469,10 @@ def get_planner_tasks(department=None):
 @frappe.whitelist()
 def planner_get_backlog(searchtext=None, projectText=None):
     """Get tasks for the backlog with enhanced search"""
+    print(f"\n=== Planner Backlog Request ===") 
     try:
         filters = {
-            "status": ["in", ["Open", "Working"]],
-            "exp_start_date": ["is", "not set"]
+            "_assign": ["is", "null"],
         }
         
         if searchtext:
@@ -498,7 +498,7 @@ def planner_get_backlog(searchtext=None, projectText=None):
         
         for task in tasks:
             task.color = get_task_color(task)
-            task.assigned_to = get_primary_assignee(task)
+            #task.assigned_to = get_primary_assignee(task)
         
         return tasks
     except Exception as e:

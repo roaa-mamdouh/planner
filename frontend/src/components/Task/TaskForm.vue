@@ -1,5 +1,5 @@
 <template>
-    <form>
+    <form @submit.prevent="onSubmit">
         <div class="flex flex-col">
             <div class="mb-3">
 
@@ -25,7 +25,7 @@
                             <Autocomplete :options="employeesList" v-model="employees" placeholder="Select people"
                                 :multiple="false" class="mb-5" @update:modelValue="onSelectEmployee" />
                             <div class="flex flex-col gap-3">
-                                <div class="flex justify-between items-center" v-for="assignee in docinfo.value?.assignments || []">
+                                <div class="flex justify-between items-center" v-for="assignee in docinfo.value?.assignments || []" :key="assignee.owner">
                                     <div class="flex justify-start items-center gap-3">
                                         <Avatar :shape="'circle'" :image="assignee.image" :label="assignee.owner"
                                             size="2xl" />
@@ -40,49 +40,45 @@
                     </Dialog>
                 </div>
             </div>
-            <form>
+            <div>
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Subject</label>
                     <TextInput :type="'text'" size="sm" variant="subtle" placeholder="Subject" :disabled="false"
-                        v-model="subject"
+                        v-model="values.subject"
                         :class="[errors.subject ? 'border-red-400 hover:border-red-400 hover:bg-grey-200 focus:border-red-500 focus-visible:ring-red-400' : '']" />
-                    <ErrorMessage v-if="errors.subject" :message="Error(errors.subject)" class="mt-1" />
+                    <ErrorMessage v-if="errors.subject" :message="errors.subject" class="mt-1" />
                 </div>
-
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Project</label>
                     <TextInput :type="'text'" size="sm" variant="subtle" placeholder="Project" :disabled="false"
-                        v-model="project" />
-                    <!--<TextInputAutocomplete v-model="project" placeholder="Project" :options="projectOptions" /> -->
+                        v-model="values.project" />
                 </div>
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Elevator</label>
                     <TextInput :type="'text'" size="sm" variant="subtle" placeholder="Elevator" :disabled="false"
-                        v-model="elevator" />
-                    <!-- <TextInputAutocomplete v-model="elevator" placeholder="Elevator" :options="elevatorOptions" value-by="elevator" label-by="name" />-->
+                        v-model="values.elevator" />
                 </div>
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Type</label>
-                    <TextInputAutocomplete v-model="type" placeholder="Type" :options="typeOptions" />
+                    <TextInputAutocomplete v-model="values.type" placeholder="Type" :options="typeOptions" />
                 </div>
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Status</label>
                     <Select :options="['Open', 'Working', 'Pending Review', 'Overdue', 'Completed', 'Cancelled']"
-                        v-model="status" />
+                        v-model="values.status" />
                 </div>
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Priority</label>
-                    <Select :options="['Low', 'Medium', 'High']" v-model="priority" />
+                    <Select :options="['Low', 'Medium', 'High']" v-model="values.priority" />
                 </div>
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Parent Task</label>
-                    <TextInputAutocomplete v-model="parent_task" placeholder="Parent Task" :options="parentTaskOptions"
+                    <TextInputAutocomplete v-model="values.parent_task" placeholder="Parent Task" :options="parentTaskOptions"
                         value-by="parent_name" label-by="name" />
                 </div>
-
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Expected Start Date</label>
-                    <VueDatePicker placeholder="mm/dd/yyyy" v-model="exp_start_date" class="mb-3"
+                    <VueDatePicker placeholder="mm/dd/yyyy" v-model="values.exp_start_date" class="mb-3"
                         :week-numbers="{ type: 'iso' }" autoApply :closeOnAutoApply="true" :clearable="false"
                         :enable-time-picker="false">
                         <template #dp-input="{ value }">
@@ -91,15 +87,13 @@
                                 placeholder="mm/dd/yyyy"
                                 :class="[errors.exp_start_date ? 'border-red-400 hover:border-red-400 hover:bg-grey-200 focus:border-red-500 focus-visible:ring-red-400' : '']" />
                             <FeatherIcon name="calendar" class="w-4 h-4 datepicker-icon text-gray-600" />
-                            <ErrorMessage v-if="errors.exp_start_date" :message="Error(errors.exp_start_date)"
-                                class="mt-1" />
+                            <ErrorMessage v-if="errors.exp_start_date" :message="errors.exp_start_date" class="mt-1" />
                         </template>
                     </VueDatePicker>
                 </div>
-
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Expected End Date</label>
-                    <VueDatePicker placeholder="mm/dd/yyyy" v-model="exp_end_date" class="mb-3"
+                    <VueDatePicker placeholder="mm/dd/yyyy" v-model="values.exp_end_date" class="mb-3"
                         :week-numbers="{ type: 'iso' }" autoApply :closeOnAutoApply="true" :clearable="false"
                         :enable-time-picker="false">
                         <template #dp-input="{ value }">
@@ -108,35 +102,37 @@
                                 placeholder="mm/dd/yyyy"
                                 :class="[errors.exp_end_date ? 'border-red-400 hover:border-red-400 hover:bg-grey-200 focus:border-red-500 focus-visible:ring-red-400' : '']" />
                             <FeatherIcon name="calendar" class="w-4 h-4 datepicker-icon text-gray-600" />
-                            <ErrorMessage v-if="errors.exp_end_date" :message="Error(errors.exp_end_date)"
-                                class="mt-1" />
+                            <ErrorMessage v-if="errors.exp_end_date" :message="errors.exp_end_date" class="mt-1" />
                         </template>
                     </VueDatePicker>
                 </div>
-
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Expected Time</label>
                     <TextInput :type="'number'" size="sm" variant="subtle" placeholder="Expected Time" :disabled="false"
-                        v-model="expected_time"
+                        v-model="values.expected_time"
                         :class="[errors.expected_time ? 'border-red-400 hover:border-red-400 hover:bg-grey-200 focus:border-red-500 focus-visible:ring-red-400' : '']" />
-                    <ErrorMessage v-if="errors.expected_time" :message="Error(errors.expected_time)" class="mt-1" />
+                    <ErrorMessage v-if="errors.expected_time" :message="errors.expected_time" class="mt-1" />
                 </div>
-
                 <div class="mb-3">
                     <label class="block text-xs text-gray-600 mb-2">Actual Time in Hours</label>
                     <TextInput :type="'number'" size="sm" variant="subtle" placeholder="Actual Time in Hours"
-                        :disabled="false" v-model="actual_time"
+                        :disabled="false" v-model="values.actual_time"
                         :class="[errors.actual_time ? 'border-red-400 hover:border-red-400 hover:bg-grey-200 focus:border-red-500 focus-visible:ring-red-400' : '']" />
-                    <ErrorMessage v-if="errors.actual_time" :message="Error(errors.actual_time)" class="mt-1" />
+                    <ErrorMessage v-if="errors.actual_time" :message="errors.actual_time" class="mt-1" />
                 </div>
-            </form>
+            </div>
+            <div class="flex justify-end mt-4">
+                <button type="submit" class="btn btn-primary">
+                    Save
+                </button>
+            </div>
         </div>
     </form>
 </template>
 
-<script setup>
 
-import { ref, onMounted, inject, computed, defineProps, watch } from "vue";
+<script setup>
+import { ref, onMounted, inject, computed, defineProps, watch, defineEmits } from "vue";
 import { createResource } from "frappe-ui";
 import { useForm } from 'vee-validate';
 import { toTypedSchema } from '@vee-validate/yup';
@@ -146,356 +142,251 @@ import { getURL } from '../../getURL.js'
 import { useRoute } from 'vue-router';
 import TextInputAutocomplete from '@/components/TextInputAutocomplete.vue';
 
-// Props to be taken
+// Props and emits
 const props = defineProps({
     task: String,
     department: String
 });
 
-let dataTask = ref();
+const emit = defineEmits(['update', 'close']);
 
+// Form validation schema
 const schema = toTypedSchema(
     object({
-        subject: string().required(),
+        subject: string().required('Subject is required'),
         project: string(),
         elevator: string(),
         type: string(),
         parent_task: string(),
-        status: string().required(),
-        priority: string().required(),
-        exp_start_date: string().required(),
-        exp_end_date: string().required(),
-        expected_time: string().required(),
-        actual_time: string().required(),
+        status: string().required('Status is required'),
+        priority: string().required('Priority is required'),
+        exp_start_date: date().required('Start date is required'),
+        exp_end_date: date().required('End date is required'),
+        expected_time: number().required('Expected time is required'),
+        actual_time: number()
     })
 );
 
-let employees = ref();
-
-let employeesList = ref([]);
-
-// get selected employees from API
-let selectedEmployees = ref([{
-    label: 'Muhammad Darwis Arifin',
-    value: 'Muhammad-Darwis-Arifin',
-    image: 'https://i.pravatar.cc/400?img=70',
-},
-{
-    label: 'Christoph Diethelm',
-    value: 'Christoph-Diethelm',
-    image: 'https://i.pravatar.cc/400?img=69',
-},]);
-
-// filter out selected employees from employees list automatically
-const unselectedEmployees = computed(() => {
-    return employeesList;
+// Form handling
+const { handleSubmit, values, errors, resetForm } = useForm({
+    validationSchema: schema,
+    initialValues: {
+        subject: '',
+        project: '',
+        elevator: '',
+        type: '',
+        parent_task: '',
+        status: 'Open',
+        priority: 'Medium',
+        exp_start_date: null,
+        exp_end_date: null,
+        expected_time: 0,
+        actual_time: 0
+    }
 });
 
-// event when remove selected employee
-const unselectEmployee = (assignedperson) => {
-
-    const resp = createResource({
-        url: 'frappe.desk.form.assign_to.remove',
-        params: {
-            doctype: "Task",
-            name: props.task,
-            assign_to: assignedperson
-        },
-        auto: true,
-        onSuccess: () => {
-
-            if (docinfo.value?.assignments) {
-                const index = docinfo.value.assignments.findIndex(a => a.owner === assignedperson);
-                if (index !== -1) {
-                    docinfo.value.assignments.splice(index, 1);
-                }
+// Form submission handler
+const onSubmit = handleSubmit(async (values) => {
+    console.log('Form submitted with values:', values);
+    console.log('Task ID:', props.task);
+    try {
+        console.log('Submitting form with values:', values);
+        // Exclude actual_time, parent_task, type, and elevator from updates as backend does not accept them
+        const { actual_time, parent_task, type, elevator, project, subject, exp_end_date, exp_start_date, ...updates } = values;
+        const resource = createResource({
+            url: 'planner.api.update_task',
+            params: {
+                task_id: props.task,
+                updates: updates
+            },
+            onSuccess: (response) => {
+                console.log('Update successful:', response);
+                emit('update', response);
+                emit('close');
             }
-        }
-    });
-};
-// event when select employee
-const onSelectEmployee = (employee) => {
-
-    // have to put this in an array for the api to work
-    const assign_to_array = [employee.value]
-
-    const resp = createResource({
-        url: 'frappe.desk.form.assign_to.add',
-        params: {
-            doctype: "Task",
-            name: props.task,
-            description: props.task,
-            assign_to: assign_to_array,
-            bulk_assign: false
-        },
-        auto: true,
-        onSuccess: () => {
-            if (docinfo.value?.assignments) {
-                docinfo.value.assignments.push({
-                    owner: employee.value,
-                    fullname: employee.label,
-                    image: employee.image
-                });
-            }
-            selectedEmployees.value.push(employee);
-        }
-    })
-};
-
-
-// default options structure
-let projectOptions = ref([
-    {
-        "label": "TASK-2024-00004",
-        "value": "PROJ-0001",
-    },
-    {
-        "label": "TASK-2024-00005",
-        "value": "PROJ-0006"
-    },
-    {
-        "label": "TASK-2024-00008",
-        "value": "PROJ-0008"
-    }]);
-
-// you can define which property to be used as label and value, don't forget to add value-by and label-by on the component
-let elevatorOptions = ref([
-    {
-        "name": "Elevator 1",
-        "elevator": "Elevator 1 value",
-    },
-    {
-        "name": "Elevator 2",
-        "elevator": "Elevator 2 value"
-    },
-    {
-        "name": "Elevator 3",
-        "elevator": "Elevator 3 value"
-    }]);
-
-let typeOptions = ref([
-    {
-        "label": "Task",
-        "value": "Task",
-    },
-    {
-        "label": "Bug",
-        "value": "Bug"
-    },
-    {
-        "label": "Feature",
-        "value": "Feature"
-    }]);
-
-let parentTaskOptions = ref([
-    {
-        "name": "TASK-2024-00004",
-        "parent_name": "TASK-2024-00004 value",
-    },
-    {
-        "name": "TASK-2024-00005",
-        "parent_name": "TASK-2024-00005 value"
-    },
-    {
-        "name": "TASK-2024-00008",
-        "parent_name": "TASK-2024-00008 value"
-    }]);
-
-const { values, errors, defineField, handleSubmit, setErrors } = useForm({
-    validationSchema: schema
+        });
+        
+        await resource.submit();
+    } catch (error) {
+        console.error('Error updating task:', error);
+    }
 });
 
-const [subject] = defineField('subject');
-const [project] = defineField('project');
-const [elevator] = defineField('elevator');
-const [type] = defineField('type');
-const [parent_task] = defineField('parent_task');
-const [status] = defineField('status');
-const [priority] = defineField('priority');
-const [exp_start_date] = defineField('exp_start_date');
-const [exp_end_date] = defineField('exp_end_date');
-const [expected_time] = defineField('expected_time');
-const [actual_time] = defineField('actual_time');
-
-// track if any changes on the form fields, you can use this to make autosave feature
-watchDebounced(
-    values,
-    () => {
-        if (dataTask.value.subject !== values.subject) {
-            updateValue("subject", values.subject)
-            dataTask.value.subject = values.subject
-        }
-
-        if (dataTask.value.project !== values.project) {
-            updateValue("project", values.project)
-            dataTask.value.project = values.project
-        }
-        if (dataTask.value.status !== values.status) {
-            updateValue("status", values.status)
-            dataTask.value.status = values.status
-        }
-        if (dataTask.value.priority !== values.priority) {
-            updateValue("priority", values.priority)
-            dataTask.value.priority = values.priority
-        }
-        if (dataTask.value.exp_start_date !== values.exp_start_date) {
-
-            updateValue("exp_start_date", values.exp_start_date)
-            dataTask.value.exp_start_date = values.exp_start_date
-
-
-        }
-        if (dataTask.value.exp_end_date !== values.exp_end_date) {
-            updateValue("exp_end_date", values.exp_end_date)
-            dataTask.value.exp_end_date = values.exp_end_date
-        }
-        console.log(values)
-
-    },
-    { debounce: 2000, maxWait: 8000 },
-)
-
-// The doctype is accessible through data.doc
-// Example json response from ERP sent to oyu already
-// 
-
+// State
+const dataTask = ref(null);
+const employees = ref(null);
+const employeesList = ref([]);
 const addAssigneePopup = ref(false);
 const docinfo = ref({
     assignments: [],
     user_info: {}
 });
 
-const sortDocinfo = () => {
-    if (!docinfo.value?.assignments?.length || !docinfo.value?.user_info) {
-        return;
-    }
+// Options
+const projectOptions = ref([
+    { label: "TASK-2024-00004", value: "PROJ-0001" },
+    { label: "TASK-2024-00005", value: "PROJ-0006" },
+    { label: "TASK-2024-00008", value: "PROJ-0008" }
+]);
 
-    docinfo.value.assignments.forEach(assignment => {
-        const userInfo = docinfo.value.user_info[assignment.owner];
-        if (userInfo) {
-            if (userInfo.image) {
-                assignment.image = getURL() + userInfo.image;
-            }
-            assignment.fullname = userInfo.fullname || assignment.owner;
-        }
-    });
-}
+const typeOptions = ref([
+    { label: "Task", value: "Task" },
+    { label: "Bug", value: "Bug" },
+    { label: "Feature", value: "Feature" }
+]);
 
-const updateValue = (field, value) => {
+const elevatorOptions = ref([
+    { name: "Elevator 1", elevator: "Elevator 1 value" },
+    { name: "Elevator 2", elevator: "Elevator 2 value" },
+    { name: "Elevator 3", elevator: "Elevator 3 value" }
+]);
 
-    // Utility function to format date as YYYY-MM-DD
-    const formatDateForAPI = (date) => {
-        if (!date) return null
-        if (typeof date === 'string') {
-            // If it's already a string in YYYY-MM-DD format, return as is
-            if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-                return date
-            }
-            // Otherwise parse it first
-            date = new Date(date)
-        }
-        const d = new Date(date)
-        return d.getFullYear() + '-' +
-            String(d.getMonth() + 1).padStart(2, '0') + '-' +
-            String(d.getDate()).padStart(2, '0')
-    }
-
-    // Format date fields before sending
-    let formattedValue = value
-    if (field === 'exp_start_date' || field === 'exp_end_date') {
-        formattedValue = formatDateForAPI(value)
-    }
-
-    const resp = createResource({
-        url: 'frappe.client.set_value',
-        params: {
-            doctype: "Task",
-            name: props.task,
-            fieldname: field,
-            value: formattedValue
-        },
-        auto: true,
-        onError: (err) => {
-
-            // Set the error to the field directly
-            setErrors({ [field]: 'Error update' });
-
-        }
-    });
-}
+const parentTaskOptions = ref([
+    { name: "TASK-2024-00004", parent_name: "TASK-2024-00004 value" },
+    { name: "TASK-2024-00005", parent_name: "TASK-2024-00005 value" },
+    { name: "TASK-2024-00008", parent_name: "TASK-2024-00008 value" }
+]);
 
 
-// Watch docinfo changes
-watch(() => docinfo.value, (newDocinfo) => {
-    if (newDocinfo?.assignments?.length && newDocinfo?.user_info) {
-        newDocinfo.assignments.forEach((assignment, index) => {
-            const userInfo = newDocinfo.user_info[assignment.owner];
-            if (userInfo) {
-                if (userInfo.image) {
-                    docinfo.value.assignments[index].image = getURL() + userInfo.image;
-                }
-                docinfo.value.assignments[index].fullname = userInfo.fullname || assignment.owner;
+const unselectEmployee = async (assignedperson) => {
+    try {
+        const resource = createResource({
+            url: 'frappe.desk.form.assign_to.remove',
+            params: {
+                doctype: "Task",
+                name: props.task,
+                assign_to: assignedperson
             }
         });
-    }
-}, { deep: true });
-
-onMounted(async () => {
-    // Load employee list
-    const employeeResource = createResource({
-        url: 'planner.api.get_department_employees',
-        params: {
-            department: props.department
-        },
-        onSuccess: (data) => {
-            employeesList.value = data.map(emp => ({
-                value: emp.id,
-                label: emp.name,
-                image: emp.image
-            }));
-        },
-        onError: (error) => {
-            console.error('Error loading employees:', error);
-            employeesList.value = [];
-        }
-    });
-
-    await employeeResource.submit();
-
-    // Load task details
-    const taskResource = createResource({
-        url: 'frappe.desk.form.load.getdoc',
-        params: {
-            doctype: "Task",
-            name: props.task
-        },
-        auto: true,
-        onSuccess: (data) => {
-
-
-            if (taskResource.data) {
-                dataTask.value = taskResource.data.docs[0];
-                docinfo.value = taskResource.data.docinfo;
-
-                subject.value = dataTask.value.subject;
-                project.value = dataTask.value.project;
-                elevator.value = dataTask.value.elevator;
-                type.value = dataTask.value.task;
-                parent_task.value = dataTask.value.parent_task;
-                status.value = dataTask.value.status;
-                priority.value = dataTask.value.priority;
-                exp_start_date.value = dataTask.value.exp_start_date;
-                exp_end_date.value = dataTask.value.exp_end_date;
-                expected_time.value = dataTask.value.expected_time;
-                actual_time.value = dataTask.value.actual_time;
-
-                sortDocinfo()
+        
+        await resource.submit();
+        
+        if (docinfo.value?.assignments) {
+            const index = docinfo.value.assignments.findIndex(a => a.owner === assignedperson);
+            if (index !== -1) {
+                docinfo.value.assignments.splice(index, 1);
             }
-
         }
-    });
+    } catch (error) {
+        console.error('Error removing assignee:', error);
+    }
+};
 
+const onSelectEmployee = async (employee) => {
+    try {
+        const resource = createResource({
+            url: 'frappe.desk.form.assign_to.add',
+            params: {
+                doctype: "Task",
+                name: props.task,
+                description: props.task,
+                assign_to: [employee.value],
+                bulk_assign: false
+            }
+        });
+        
+        await resource.submit();
+        
+        if (docinfo.value?.assignments) {
+            docinfo.value.assignments.push({
+                owner: employee.value,
+                fullname: employee.label,
+                image: employee.image
+            });
+        }
+    } catch (error) {
+        console.error('Error assigning employee:', error);
+    }
+};
 
+const updateValue = async (field, value) => {
+    try {
+        const resource = createResource({
+            url: 'planner.api.update_task',
+            params: {
+                task_id: props.task,
+                updates: { [field]: value }
+            }
+        });
+        await resource.submit();
+    } catch (error) {
+        console.error(`Error updating field ${field}:`, error);
+    }
+};
+
+// Watch for form changes
+watchDebounced(
+    values,
+    async (newValues) => {
+        if (!dataTask.value) return;
+        
+        const fields = ['subject', 'project', 'status', 'priority', 'exp_start_date', 'exp_end_date'];
+        for (const field of fields) {
+            if (dataTask.value[field] !== newValues[field]) {
+                await updateValue(field, newValues[field]);
+                dataTask.value[field] = newValues[field];
+            }
+        }
+    },
+    { debounce: 2000, maxWait: 8000 }
+);
+
+// Initialize
+onMounted(async () => {
+    try {
+        // Load employees
+        const employeeResource = createResource({
+            url: 'planner.api.get_workload_data',
+            params: { department: props.department }
+        });
+        const employeesData = await employeeResource.submit();
+        employeesList.value = (employeesData.assignees || []).map(emp => ({
+            value: emp.id,
+            label: emp.name,
+            image: emp.image
+        }));
+
+        // Load task
+        console.log('************Loading task:', props.task);   
+        const taskResource = createResource({
+            url: 'frappe.desk.form.load.getdoc',
+            params: {
+                doctype: "Task",
+                name: props.task
+            }
+        });
+        const taskData = await taskResource.submit();
+        
+        if (taskData?.docs?.[0]) {
+            dataTask.value = taskData.docs[0];
+            docinfo.value = taskData.docinfo;
+
+            // Map task data to form fields
+            const fields = {
+                subject: 'subject',
+                project: 'project',
+                elevator: 'elevator',
+                type: 'type',
+                parent_task: 'parent_task',
+                status: 'status',
+                priority: 'priority',
+                exp_start_date: 'exp_start_date',
+                exp_end_date: 'exp_end_date',
+                expected_time: 'expected_time',
+                actual_time: 'actual_time'
+            };
+
+            const mappedValues = {};
+            Object.entries(fields).forEach(([formField, taskField]) => {
+                if (dataTask.value[taskField] !== undefined) {
+                    mappedValues[formField] = dataTask.value[taskField];
+                }
+            });
+            resetForm({ values: mappedValues });
+        }
+    } catch (error) {
+        console.error('Error initializing form:', error);
+    }
 });
 
 </script>
